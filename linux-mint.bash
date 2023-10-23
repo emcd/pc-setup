@@ -22,6 +22,7 @@ sudo apt-get install --yes \
     build-essential \
     g++ \
     gh \
+    git-lfs \
     jq \
     libbz2-dev \
     libffi-dev \
@@ -33,6 +34,7 @@ sudo apt-get install --yes \
     libxml2-dev libxmlsec1-dev \
     python3-dev \
     python3-venv \
+    ripgrep \
     tk-dev \
     vagrant \
     vim \
@@ -60,7 +62,7 @@ mkdir --parents "${XDG_DATA_HOME}/bash-completion/completions"
 
 git config --global init.defaultBranch master
 git config --global user.email "emcd@users.noreply.github.com"
-git config --global user.name "Eric McDonald" 
+git config --global user.name "Eric McDonald"
 
 git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
 
