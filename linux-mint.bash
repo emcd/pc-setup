@@ -15,6 +15,8 @@ sudo chmod go+r '/usr/share/keyrings/githubcli-archive-keyring.gpg'
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
     | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
 
+sudo add-apt-repository ppa:neovim-ppa/unstable
+
 
 sudo apt-get update
 sudo apt-get install --yes \
@@ -32,8 +34,8 @@ sudo apt-get install --yes \
     libsqlite3-dev \
     libssl-dev \
     libxml2-dev libxmlsec1-dev \
-    python3-dev \
-    python3-venv \
+    neovim \
+    python3-dev python3-pip python3-venv \
     ripgrep \
     tk-dev \
     vagrant \
@@ -64,10 +66,11 @@ git config --global init.defaultBranch master
 git config --global user.email "emcd@users.noreply.github.com"
 git config --global user.name "Eric McDonald"
 
-git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
+git clone https://github.com/emcd/nvim-config.git "${XDG_CONFIG_HOME}/nvim"
+#git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
 
-# TODO: Discover latest stable Asdf branch.
-git clone https://github.com/asdf-vm/asdf.git "${HOME}/.local/installations/asdf" --branch v0.11.3
+# TODO: Discover latest stable Asdf branch via Github API.
+git clone https://github.com/asdf-vm/asdf.git "${HOME}/.local/installations/asdf" --branch v0.15.0
 # TODO: Use XDG paths.
 #       https://github.com/asdf-vm/asdf/issues/687#issuecomment-1005195311
 mkdir --parents "${XDG_CONFIG_HOME}/asdf"
@@ -77,9 +80,20 @@ export ASDF_DATA_DIR="${XDG_DATA_HOME}/asdf"
 export ASDF_CONFIG_FILE="${XDG_CONFIG_HOME}/asdf/asdfrc"
 source "${HOME}/.local/installations/asdf/asdf.sh"
 source "${HOME}/.local/installations/asdf/completions/asdf.bash"
+
+export PATH="${PATH}:${HOME}/.local/bin"
 EOF
 source "${HOME}/.bashrc"
 
 asdf plugin add packer
-# TODO: Discover latest stable Packer release via Github API.
-asdf install packer 1.8.6
+asdf install packer latest
+asdf global packer latest
+
+asdf plugin add python
+asdf install python 'latest:3.10'
+asdf install python latest
+asdf global python 'latest:3.10'
+
+asdf plugin-add rust
+asdf install rust latest
+asdf global rust latest
