@@ -50,9 +50,11 @@ sudo apt-get install --yes \
 # TODO: Import GPG private keys.
 
 cat >>"${HOME}/.bashrc" <<'EOF'
+alias vi=nvim
 alias xccopy='xclip -selection clipboard -in'
 alias xcpaste='xclip -selection clipboard -out'
 
+export EDITOR=nvim VISUAL=nvim
 export XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
@@ -97,3 +99,9 @@ asdf global python 'latest:3.10'
 asdf plugin-add rust
 asdf install rust latest
 asdf global rust latest
+
+# TODO: Download and install fonts.
+#       https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
+#
+#       sudo cp "$font_file" /usr/share/fonts/truetype/
+#       sudo fc-cache -f -v
