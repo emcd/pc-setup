@@ -22,6 +22,7 @@ sudo apt-get update
 sudo apt-get install --yes \
     brave-browser \
     build-essential \
+    fzf \
     g++ \
     gh \
     git-lfs \
