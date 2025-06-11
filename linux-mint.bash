@@ -85,6 +85,8 @@ source "${HOME}/.local/installations/asdf/asdf.sh"
 source "${HOME}/.local/installations/asdf/completions/asdf.bash"
 
 export PATH="${PATH}:${HOME}/.local/bin"
+
+export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 EOF
 source "${HOME}/.bashrc"
 
