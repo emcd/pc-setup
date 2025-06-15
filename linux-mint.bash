@@ -2,7 +2,7 @@ set -eu -o pipefail
 
 type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
 
-curl --fail --location --show-error --silient \
+curl --fail --location --show-error --silent \
     'https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg' \
     | sudo dd of='/usr/share/keyrings/brave-browser-archive-keyring.gpg'
 echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
@@ -72,17 +72,12 @@ git config --global user.name "Eric McDonald"
 git clone https://github.com/emcd/nvim-config.git "${XDG_CONFIG_HOME}/nvim"
 #git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
 
-# TODO: Discover latest stable Asdf branch via Github API.
-git clone https://github.com/asdf-vm/asdf.git "${HOME}/.local/installations/asdf" --branch v0.15.0
-# TODO: Use XDG paths.
-#       https://github.com/asdf-vm/asdf/issues/687#issuecomment-1005195311
-mkdir --parents "${XDG_CONFIG_HOME}/asdf"
-cp .config/asdf/asdfrc "${XDG_CONFIG_HOME}/asdf"
+# Install Mise (XDG-compliant version manager) with GPG verification
+gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x7413A06D
+curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt | MISE_INSTALL_PATH="${HOME}/.local/bin/mise" sh
+
 cat >>"${HOME}/.bashrc" <<'EOF'
-export ASDF_DATA_DIR="${XDG_DATA_HOME}/asdf"
-export ASDF_CONFIG_FILE="${XDG_CONFIG_HOME}/asdf/asdfrc"
-source "${HOME}/.local/installations/asdf/asdf.sh"
-source "${HOME}/.local/installations/asdf/completions/asdf.bash"
+eval "$(~/.local/bin/mise activate bash)"
 
 export PATH="${PATH}:${HOME}/.local/bin"
 
@@ -90,18 +85,24 @@ export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 EOF
 source "${HOME}/.bashrc"
 
-asdf plugin add packer
-asdf install packer latest
-asdf global packer latest
+# Install development tools via Mise
+mise install packer@latest
+mise install python@3.10 python@3.11 python@3.12 python@3.13
+mise install node@22 node@24
+mise install rust@latest
 
-asdf plugin add python
-asdf install python 'latest:3.10'
-asdf install python latest
-asdf global python 'latest:3.10'
+# Set global versions
+mise use --global python@3.10 node@24 rust@latest packer@latest
 
-asdf plugin-add rust
-asdf install rust latest
-asdf global rust latest
+# Install Claude Code
+npm install -g @anthropic-ai/claude-code
+
+# Install Dropbox
+curl --fail --location --show-error --silent \
+    'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2020.03.04_amd64.deb' \
+    --output /tmp/dropbox.deb
+sudo apt install --yes /tmp/dropbox.deb
+rm /tmp/dropbox.deb
 
 # TODO: Download and install fonts.
 #       https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
