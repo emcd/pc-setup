@@ -68,11 +68,14 @@ mkdir --parents "${XDG_DATA_HOME}/bash-completion/completions"
 git config --global init.defaultBranch master
 git config --global user.email "emcd@users.noreply.github.com"
 git config --global user.name "Eric McDonald"
+git config --global gpg.format ssh
+git config --global user.signingkey "${HOME}/.ssh/id_ed25519_github.pub"
+git config --global gpg.ssh.allowedSignersFile "${HOME}/.ssh/allowed_signers"
+echo "$(git config --global --get user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed25519_github.pub)" >>"${HOME}/.ssh/allowed_signers"
 
 git clone https://github.com/emcd/nvim-config.git "${XDG_CONFIG_HOME}/nvim"
 #git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
 
-# Install Mise (XDG-compliant version manager) with GPG verification
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x7413A06D
 curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt | MISE_INSTALL_PATH="${HOME}/.local/bin/mise" sh
 
@@ -85,19 +88,15 @@ export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 EOF
 source "${HOME}/.bashrc"
 
-# Install development tools via Mise
 mise install packer@latest
 mise install python@3.10 python@3.11 python@3.12 python@3.13
 mise install node@22 node@24
 mise install rust@latest
 
-# Set global versions
 mise use --global python@3.10 node@24 rust@latest packer@latest
 
-# Install Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# Install Dropbox
 curl --fail --location --show-error --silent \
     'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2020.03.04_amd64.deb' \
     --output /tmp/dropbox.deb
