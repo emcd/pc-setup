@@ -88,14 +88,20 @@ export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 EOF
 source "${HOME}/.bashrc"
 
-mise install packer@latest
 mise install python@3.10 python@3.11 python@3.12 python@3.13
-mise install node@22 node@24
 mise install rust@latest
+mise install go@latest
+mise install node@22 node@24
+mise install packer@latest
 
-mise use --global python@3.10 node@24 rust@latest packer@latest
+mise use --global python@3.10 rust@latest go@latest node@24 packer@latest
+
+rustup component add rust-analyzer
+
+go install github.com/isaacphi/mcp-language-server@latest
 
 npm install -g @anthropic-ai/claude-code
+claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl --fail --location --show-error --silent \
     'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2020.03.04_amd64.deb' \
