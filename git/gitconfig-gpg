@@ -1,0 +1,17 @@
+[user]
+    email = emcd@users.noreply.github.com
+	name = Eric McDonald
+	signingkey = 8CE2AE0B49ECEA33!
+[push]
+	default = simple
+[filter "lfs"]
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+[init]
+	defaultBranch = master
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
