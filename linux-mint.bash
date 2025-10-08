@@ -85,6 +85,7 @@ eval "$(~/.local/bin/mise activate bash)"
 export PATH="${PATH}:${HOME}/.local/bin"
 
 export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
+export CODEX_HOME="${XDG_CONFIG_HOME}/codex"
 EOF
 source "${HOME}/.bashrc"
 

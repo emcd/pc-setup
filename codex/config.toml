@@ -1,0 +1,22 @@
+model = "gpt-5-codex"
+#model_reasoning_effort = "medium"
+approval_policy = "untrusted"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+
+[shell_environment_policy]
+inherit = "core"
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+[mcp_servers.librovore]
+command = "uvx"
+args = ["librovore", "serve"]
+
+[mcp_servers.pyright]
+command = "mcp-language-server"
+args = ["--lsp", "pyright-langserver", "--workspace", ".", "--", "--stdio"]
