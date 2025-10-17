@@ -82,7 +82,8 @@ curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt | MISE_INSTALL_PATH="${
 cat >>"${HOME}/.bashrc" <<'EOF'
 eval "$(~/.local/bin/mise activate bash)"
 
-export PATH="${PATH}:${HOME}/.local/bin"
+export GOPATH="${HOME}/.local/share/go"
+export PATH="${PATH}:${HOME}/.local/bin:${HOME}/.local/share/npm-packages/bin:${HOME}/.local/share/go/bin"
 
 export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 export CODEX_HOME="${XDG_CONFIG_HOME}/codex"
@@ -99,13 +100,15 @@ mise use --global python@3.10 rust@latest go@latest node@24 packer@latest
 
 rustup component add rust-analyzer
 
+npm config set prefix ~/.local/share/npm-packages
+
 go install github.com/isaacphi/mcp-language-server@latest
 
 npm install -g @anthropic-ai/claude-code
 claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl --fail --location --show-error --silent \
-    'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2020.03.04_amd64.deb' \
+    'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb' \
     --output /tmp/dropbox.deb
 sudo apt install --yes /tmp/dropbox.deb
 rm /tmp/dropbox.deb
