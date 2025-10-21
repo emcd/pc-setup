@@ -17,10 +17,10 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githu
 
 sudo add-apt-repository ppa:neovim-ppa/unstable
 
-
 sudo apt-get update
 sudo apt-get install --yes \
     brave-browser \
+    bubblewrap \
     build-essential \
     fzf \
     g++ \
@@ -38,6 +38,8 @@ sudo apt-get install --yes \
     neovim \
     python3-dev python3-pip python3-venv \
     ripgrep \
+    rustup \
+    socat \
     tk-dev \
     vagrant \
     vim \
@@ -71,14 +73,22 @@ git config --global user.name "Eric McDonald"
 git config --global gpg.format ssh
 git config --global user.signingkey "${HOME}/.ssh/id_ed25519_github.pub"
 git config --global gpg.ssh.allowedSignersFile "${HOME}/.ssh/allowed_signers"
+git config --global commit.gpgSign true
+git config --global tag.gpgSign true
 echo "$(git config --global --get user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed25519_github.pub)" >>"${HOME}/.ssh/allowed_signers"
 
 git clone https://github.com/emcd/nvim-config.git "${XDG_CONFIG_HOME}/nvim"
 #git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
 
+# TODO: Use signed version of Uv installer, if available.
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+npm config set prefix "${HOME}/.local/share/npm-packages"
+
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x7413A06D
 curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt | MISE_INSTALL_PATH="${HOME}/.local/bin/mise" sh
 
+# TODO: Configure 'rustup' path.
 cat >>"${HOME}/.bashrc" <<'EOF'
 eval "$(~/.local/bin/mise activate bash)"
 
@@ -99,8 +109,6 @@ mise install packer@latest
 mise use --global python@3.10 rust@latest go@latest node@24 packer@latest
 
 rustup component add rust-analyzer
-
-npm config set prefix ~/.local/share/npm-packages
 
 go install github.com/isaacphi/mcp-language-server@latest
 
