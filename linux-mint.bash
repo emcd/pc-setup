@@ -22,6 +22,7 @@ sudo apt-get install --yes \
     brave-browser \
     bubblewrap \
     build-essential \
+    fd-find \
     fzf \
     g++ \
     gh \
