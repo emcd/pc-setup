@@ -37,6 +37,7 @@ sudo apt-get install --yes \
     libssl-dev \
     libxml2-dev libxmlsec1-dev \
     neovim \
+    npm \
     python3-dev python3-pip python3-venv \
     ripgrep \
     rustup \
