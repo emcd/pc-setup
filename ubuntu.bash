@@ -42,16 +42,16 @@ sudo apt-get install --yes \
     rustup \
     socat \
     tk-dev \
-    vagrant \
     vim \
-    virtualbox-qt \
     xclip \
     xz-utils \
     zlib1g-dev
 
-# TODO: Import SSH private keys.
+# TODO: Use signed version of Uv installer, if available.
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# TODO: Import GPG private keys.
+uv tool install 'maestral[gui]'
+# TODO: Maestral sync instructions.
 
 cat >>"${HOME}/.bashrc" <<'EOF'
 alias vi=nvim
@@ -68,6 +68,9 @@ source "${HOME}/.bashrc"
 mkdir --parents "${HOME}/.local/installations"
 mkdir --parents "${XDG_DATA_HOME}/bash-completion/completions"
 
+# TODO: Import SSH private keys.
+# TODO: Import GPG private keys.
+
 git config --global init.defaultBranch master
 git config --global user.email "emcd@users.noreply.github.com"
 git config --global user.name "Eric McDonald"
@@ -80,9 +83,6 @@ echo "$(git config --global --get user.email) namespaces=\"git\" $(cat ~/.ssh/id
 
 git clone https://github.com/emcd/nvim-config.git "${XDG_CONFIG_HOME}/nvim"
 #git clone --recurse-submodules --shallow-submodules https://github.com/emcd/vim-files.git "${HOME}/.vim"
-
-# TODO: Use signed version of Uv installer, if available.
-curl -LsSf https://astral.sh/uv/install.sh | sh
 
 npm config set prefix "${HOME}/.local/share/npm-packages"
 

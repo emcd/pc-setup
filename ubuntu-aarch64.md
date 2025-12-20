@@ -6,4 +6,4 @@
 ### Dropbox
 
 - Built from sources but platform is not supported.
-- Maybe try `rclone` instead.
+- Use `maestral` instead.
