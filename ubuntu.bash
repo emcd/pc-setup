@@ -115,13 +115,13 @@ rustup component add rust-analyzer
 go install github.com/isaacphi/mcp-language-server@latest
 
 npm install -g @anthropic-ai/claude-code
-claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
+# claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
-curl --fail --location --show-error --silent \
-    'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb' \
-    --output /tmp/dropbox.deb
-sudo apt install --yes /tmp/dropbox.deb
-rm /tmp/dropbox.deb
+# curl --fail --location --show-error --silent \
+#     'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb' \
+#     --output /tmp/dropbox.deb
+# sudo apt install --yes /tmp/dropbox.deb
+# rm /tmp/dropbox.deb
 
 # TODO: Download and install fonts.
 #       https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
