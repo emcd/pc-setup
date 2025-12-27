@@ -117,6 +117,8 @@ go install github.com/isaacphi/mcp-language-server@latest
 npm install -g @anthropic-ai/claude-code
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
+curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -
+
 # curl --fail --location --show-error --silent \
 #     'https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb' \
 #     --output /tmp/dropbox.deb
