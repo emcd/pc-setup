@@ -1,0 +1,46 @@
+services:
+  vllm:
+    image: nvcr.io/nvidia/vllm:25.12.post1-py3
+    container_name: vllm-nemotron-3-nano
+    restart: unless-stopped
+
+    gpus: all
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    ports:
+      - "13080:8000"
+
+    volumes:
+      - "${HOME}/.cache/huggingface:/root/.cache/huggingface"
+      - "${HOME}/.config/vllm/reasoning-parsers:/reasoning-parsers:ro"
+
+    command:
+      - vllm
+      - serve
+      - nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --trust-remote-code
+      - --served-model-name
+      - nemotron-3-nano
+      - --tool-call-parser
+      - qwen3_coder
+      - --enable-auto-tool-choice
+      - --reasoning-parser-plugin
+      - /reasoning-parsers/nemotron-3-nano.py
+      - --reasoning-parser
+      - nano_v3
+      # TODO: for model length >256 Ki, VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+      - --max-model-len
+      - "262144"
+      - --max-num-seqs
+      - "4"
+      - --gpu-memory-utilization
+      - "0.8"
+      # - --kv-cache-dtype
+      # - fp8
