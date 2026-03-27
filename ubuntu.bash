@@ -63,6 +63,12 @@ export EDITOR=nvim VISUAL=nvim
 export XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+
+shopt -s histappend
+HISTCONTROL=ignoreboth
+HISTSIZE=10000
+HISTFILESIZE=20000
+PROMPT_COMMAND="history -a; history -n; $PROMPT_COMMAND"
 EOF
 source "${HOME}/.bashrc"
 
