@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+npm install --global @anthropic-ai/claude-code
+npm install --global @openai/codex
+npm install --global @google/gemini-cli
+npm install --global opencode-ai@latest
+# npm install --global @qwen-code/qwen-code@latest
+
+npm install --global difit
+npm install --global @fission-ai/openspec@latest

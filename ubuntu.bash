@@ -120,7 +120,7 @@ rustup component add rust-analyzer
 
 go install github.com/isaacphi/mcp-language-server@latest
 
-npm install -g @anthropic-ai/claude-code
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -
