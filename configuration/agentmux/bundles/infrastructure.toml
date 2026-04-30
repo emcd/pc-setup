@@ -1,0 +1,53 @@
+format-version = 1
+
+autostart = false
+
+# Disabled for focused bundle-start testing from this Codex session.
+[[sessions]]
+id = 'scribbles'
+name = 'Coordinator'
+directory = '/home/me/src/lm-scribbles'
+coder = 'codex'
+# coder-session-id = '019d51d9-a73b-7810-9118-f70f0a7d775f'
+
+[[sessions]]
+id = 'agents'
+name = 'Agents Owner'
+directory = '/home/me/src/agents-common'
+coder = 'codex'
+# coder-session-id = '019cb16e-f9f5-7a91-ae9c-4a1809a15ebe'
+
+[[sessions]]
+id = 'mysite'
+name = 'Blog Owner'
+directory = '/home/me/src/mysite'
+coder = 'codex'
+# coder-session-id = '019d964f-e195-7a71-b335-3929b8a48b00'
+
+[[sessions]]
+id = 'nb-mcp'
+name = 'Notebook MCP Owner'
+directory = '/home/me/src/nb-mcp-server'
+coder = 'codex'
+# coder-session-id = '019c51c5-50df-7551-90ee-a2583ccedf37'
+
+[[sessions]]
+id = 'pc-setup'
+name = 'PC Setup Owner'
+directory = '/home/me/src/pc-setup'
+coder = 'codex'
+# coder-session-id = '019d517f-248d-7e12-9437-921c1e76850c'
+
+[[sessions]]
+id = 'python'
+name = 'Python Owner'
+directory = '/home/me/src/python-project-common'
+coder = 'codex'
+# coder-session-id = '019cb265-44e7-7870-8295-7adc2b3f5520'
+
+[[sessions]]
+id = 'repositor'
+name = 'Repositories Owner'
+directory = '/home/me/src/gh-repositor'
+coder = 'codex'
+# coder-session-id = '019d55bd-7a7a-74a1-9e36-661dba2cc20b'

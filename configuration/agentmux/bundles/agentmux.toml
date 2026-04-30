@@ -1,0 +1,38 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'master'
+name = 'GPT (Coordinator)'
+directory = '/home/me/src/agentmux'
+coder = 'codex'
+# coder-session-id = '019c97d3-5f72-7472-a03a-5c08ab023f92'
+
+[[sessions]]
+id = 'mcp'
+name = 'GPT (Agents Engineer)'
+directory = '/home/me/src/WORKTREES/agentmux/mcp'
+coder = 'codex'
+# coder-session-id = '019ccfb4-bd0c-7730-9196-53da0c92b48b'
+
+[[sessions]]
+id = 'relay'
+name = 'GPT (Backend Engineer)'
+directory = '/home/me/src/WORKTREES/agentmux/relay'
+coder = 'codex'
+# coder-session-id = '019ccfb4-bcfa-7302-b581-0dc0903ffd38'
+
+[[sessions]]
+id = 'tui'
+name = 'GPT (Frontend Engineer)'
+directory = '/home/me/src/WORKTREES/agentmux/tui'
+coder = 'codex'
+# coder-session-id = '019cc966-67a1-78c0-bd74-bad42f318f9e'
+
+[[sessions]]
+id = 'acp'
+name = 'MiMo (Integration Engineer)'
+directory = '/home/me/src/WORKTREES/agentmux/acp'
+coder = 'opencode'
+# coder-session-id = 'ses_2e93ba632ffe2MdJWfxyukXUD7'

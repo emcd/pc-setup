@@ -1,0 +1,17 @@
+[Unit]
+Description=agentmux relay host (debug source tree)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/agentmux
+ExecStart=%h/src/agentmux/target/debug/agentmux host relay
+Restart=on-failure
+RestartSec=2
+Environment=RUST_LOG=debug
+Environment=AGENTMUX_RELAY_DELIVERY_DIAGNOSTICS=1
+Environment=PATH=%h/.local/share/mise/shims:%h/.cargo/bin:%h/.local/bin:%h/.local/share/npm-packages/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CODEX_HOME=%h/.config/codex
+
+[Install]
+WantedBy=default.target

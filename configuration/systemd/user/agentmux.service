@@ -1,0 +1,16 @@
+[Unit]
+Description=agentmux relay host (release build)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/agentmux
+ExecStart=%h/.cargo/bin/agentmux host relay
+Restart=on-failure
+RestartSec=2
+Environment=RUST_LOG=info
+Environment=PATH=%h/.local/share/mise/shims:%h/.cargo/bin:%h/.local/bin:%h/.local/share/npm-packages/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CODEX_HOME=%h/.config/codex
+
+[Install]
+WantedBy=default.target

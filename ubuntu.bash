@@ -121,6 +121,7 @@ rustup component add rust-analyzer
 go install github.com/isaacphi/mcp-language-server@latest
 
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -

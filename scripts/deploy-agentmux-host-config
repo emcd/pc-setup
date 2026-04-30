@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+repo_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
+
+source_bundle_dir="${repo_root}/configuration/agentmux/bundles"
+source_systemd_dir="${repo_root}/configuration/systemd/user"
+
+target_bundle_dir="${config_home}/agentmux/bundles"
+target_systemd_dir="${config_home}/systemd/user"
+
+mkdir --parents "${target_bundle_dir}" "${target_systemd_dir}"
+
+shopt -s nullglob
+bundle_files=( "${source_bundle_dir}"/*.toml )
+systemd_files=(
+    "${source_systemd_dir}/agentmux.service"
+    "${source_systemd_dir}/agentmux-debug.service"
+)
+shopt -u nullglob
+
+for file in "${bundle_files[@]}"; do
+    install --mode=0644 "${file}" "${target_bundle_dir}/"
+done
+
+for file in "${systemd_files[@]}"; do
+    install --mode=0644 "${file}" "${target_systemd_dir}/"
+done
+
+if command -v systemctl >/dev/null; then
+    if ! systemctl --user daemon-reload; then
+        echo "warning: unable to run 'systemctl --user daemon-reload'" >&2
+        echo "warning: run it manually in a user session before starting units" >&2
+    fi
+fi
+
+echo "deployed agentmux bundles to ${target_bundle_dir}"
+echo "deployed agentmux user units to ${target_systemd_dir}"
