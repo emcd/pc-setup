@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+repo_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
+data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+
+font_dir="${data_home}/fonts"
+fontconfig_dir="${config_home}/fontconfig/conf.d"
+source_fontconfig="${repo_root}/configuration/fontconfig/conf.d/10-pc-setup-terminal-fonts.conf"
+temporary_dir="${repo_root}/.auxiliary/temporary/nerd-fonts"
+zipfile="${temporary_dir}/FiraMono.zip"
+
+mkdir --parents "${font_dir}" "${fontconfig_dir}" "${temporary_dir}"
+
+if ! fc-match 'FiraMono Nerd Font Mono' | grep --quiet 'FiraMonoNerdFontMono'; then
+    curl --fail --location --show-error \
+        'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraMono.zip' \
+        --output "${zipfile}"
+    unzip -j -o "${zipfile}" 'FiraMonoNerdFontMono-*.otf' -d "${font_dir}"
+fi
+
+install --mode=0644 \
+    "${source_fontconfig}" \
+    "${fontconfig_dir}/10-pc-setup-terminal-fonts.conf"
+
+fc-cache --force "${font_dir}"
+
+echo "deployed FiraMono Nerd Font Mono to ${font_dir}"
+echo "deployed terminal fontconfig fallback to ${fontconfig_dir}"

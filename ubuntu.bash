@@ -43,6 +43,7 @@ sudo apt-get install --yes \
     rustup \
     socat \
     tk-dev \
+    unzip \
     vim \
     xclip \
     xz-utils \
@@ -121,6 +122,7 @@ rustup component add rust-analyzer
 go install github.com/isaacphi/mcp-language-server@latest
 
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
@@ -131,9 +133,3 @@ curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/insta
 #     --output /tmp/dropbox.deb
 # sudo apt install --yes /tmp/dropbox.deb
 # rm /tmp/dropbox.deb
-
-# TODO: Download and install fonts.
-#       https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
-#
-#       sudo cp "$font_file" /usr/share/fonts/truetype/
-#       sudo fc-cache -f -v
