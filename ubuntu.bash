@@ -9,6 +9,10 @@ echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] http
     | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
 
 curl --fail --location --show-error --silent \
+    'https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc' \
+    | sudo gpg --dearmor -o /usr/share/keyrings/helium.gpg
+
+curl --fail --location --show-error --silent \
     'https://cli.github.com/packages/githubcli-archive-keyring.gpg' \
     | sudo dd of='/usr/share/keyrings/githubcli-archive-keyring.gpg'
 sudo chmod go+r '/usr/share/keyrings/githubcli-archive-keyring.gpg'
@@ -27,6 +31,7 @@ sudo apt-get install --yes \
     g++ \
     gh \
     git-lfs \
+    helium-bin \
     jq \
     libbz2-dev \
     libffi-dev \
