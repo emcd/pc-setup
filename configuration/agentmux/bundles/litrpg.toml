@@ -1,0 +1,135 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'coordinator'
+name = 'Coordinator'
+directory = '/home/me/src/litrpg'
+coder = 'opencode'
+
+[[sessions]]
+id = 'advisor'
+name = 'Advisor'
+directory = '/home/me/src/WORKTREES/litrpg/advisor'
+coder = 'claude'
+
+[[sessions]]
+id = 'editor'
+name = 'Editor General'
+directory = '/home/me/src/WORKTREES/litrpg/editor'
+coder = 'opencode'
+
+[[sessions]]
+id = 'backend'
+name = 'Backend Tech Lead'
+directory = '/home/me/src/WORKTREES/litrpg/backend'
+coder = 'opencode'
+
+[[sessions]]
+id = 'frontend'
+name = 'Frontend Tech Lead'
+directory = '/home/me/src/WORKTREES/litrpg/frontend'
+coder = 'opencode'
+
+[[sessions]]
+id = 'data-models'
+name = 'Chief Ontologist'
+directory = '/home/me/src/WORKTREES/litrpg/data-models'
+coder = 'opencode'
+
+[[sessions]]
+id = 'maps'
+name = 'Chief Cartographer'
+directory = '/home/me/src/WORKTREES/litrpg/maps'
+coder = 'opencode'
+
+[[sessions]]
+id = 'be-reviewer'
+name = 'Backend Reviewer'
+directory = '/home/me/src/WORKTREES/litrpg/be-reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'fe-reviewer'
+name = 'Frontend Reviewer'
+directory = '/home/me/src/WORKTREES/litrpg/fe-reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'dm-reviewer'
+name = 'Data Models Reviewer'
+directory = '/home/me/src/WORKTREES/litrpg/dm-reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'maps-reviewer'
+name = 'Maps Reviewer'
+directory = '/home/me/src/WORKTREES/litrpg/maps-reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'agents'
+name = 'Agents Engineer'
+directory = '/home/me/src/WORKTREES/litrpg/agents'
+coder = 'opencode'
+
+[[sessions]]
+id = 'engine'
+name = 'BE Engine'
+directory = '/home/me/src/WORKTREES/litrpg/engine'
+coder = 'opencode'
+
+[[sessions]]
+id = 'gameplay'
+name = 'BE Gameplay'
+directory = '/home/me/src/WORKTREES/litrpg/gameplay'
+coder = 'opencode'
+
+[[sessions]]
+id = 'workflows'
+name = 'BE Workflows'
+directory = '/home/me/src/WORKTREES/litrpg/workflows'
+coder = 'opencode'
+
+[[sessions]]
+id = 'handbook'
+name = 'DE Handbook'
+directory = '/home/me/src/WORKTREES/litrpg/handbook'
+coder = 'opencode'
+
+[[sessions]]
+id = 'dm-kinds'
+name = 'DM Kinds'
+directory = '/home/me/src/WORKTREES/litrpg/dm-kinds'
+coder = 'opencode'
+
+[[sessions]]
+id = 'tui'
+name = 'FE TUI'
+directory = '/home/me/src/WORKTREES/litrpg/tui'
+coder = 'opencode'
+
+[[sessions]]
+id = 'web'
+name = 'FE Web'
+directory = '/home/me/src/WORKTREES/litrpg/web'
+coder = 'opencode'
+
+[[sessions]]
+id = 'maps-curation'
+name = 'Maps Curation'
+directory = '/home/me/src/WORKTREES/litrpg/maps-curation'
+coder = 'opencode'
+
+[[sessions]]
+id = 'maps-interaction'
+name = 'Maps Interaction'
+directory = '/home/me/src/WORKTREES/litrpg/maps-interaction'
+coder = 'opencode'
+
+[[sessions]]
+id = 'maps-procgen'
+name = 'Maps Procgen'
+directory = '/home/me/src/WORKTREES/litrpg/maps-procgen'
+coder = 'opencode'

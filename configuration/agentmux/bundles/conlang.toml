@@ -1,0 +1,27 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'strategist'
+name = 'Strategist'
+directory = '/home/me/src/conlang'
+coder = 'opencode'
+
+[[sessions]]
+id = 'phonologist'
+name = 'Phonologist'
+directory = '/home/me/src/WORKTREES/conlang/phonology'
+coder = 'opencode'
+
+[[sessions]]
+id = 'syntactician'
+name = 'Syntactician'
+directory = '/home/me/src/WORKTREES/conlang/syntax'
+coder = 'opencode'
+
+[[sessions]]
+id = 'semantician'
+name = 'Semantician'
+directory = '/home/me/src/WORKTREES/conlang/semantics'
+coder = 'opencode'

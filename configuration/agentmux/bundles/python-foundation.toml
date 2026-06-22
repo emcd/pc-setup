@@ -1,0 +1,51 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'absence'
+name = 'Absence Maintainer'
+directory = '/home/me/src/python-absence'
+coder = 'opencode'
+
+[[sessions]]
+id = 'accretive'
+name = 'Accretive Maintainer'
+directory = '/home/me/src/python-accretive'
+coder = 'opencode'
+
+[[sessions]]
+id = 'appcore'
+name = 'Appcore Maintainer'
+directory = '/home/me/src/python-appcore'
+coder = 'opencode'
+
+[[sessions]]
+id = 'classcore'
+name = 'Classcore Maintainer'
+directory = '/home/me/src/python-classcore'
+coder = 'opencode'
+
+[[sessions]]
+id = 'dynadoc'
+name = 'Dynadoc Maintainer'
+directory = '/home/me/src/python-dynadoc'
+coder = 'opencode'
+
+[[sessions]]
+id = 'falsifier'
+name = 'Falsifier Maintainer'
+directory = '/home/me/src/python-falsifier'
+coder = 'opencode'
+
+[[sessions]]
+id = 'frigid'
+name = 'Frigid Maintainer'
+directory = '/home/me/src/python-frigid'
+coder = 'opencode'
+
+[[sessions]]
+id = 'ictr'
+name = 'Ictr Maintainer'
+directory = '/home/me/src/python-ictr'
+coder = 'opencode'
