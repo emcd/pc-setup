@@ -29,20 +29,26 @@ sudo apt-get install --yes \
     fd-find \
     fzf \
     g++ \
+    gettext \
     gh \
     git-lfs \
     helium-bin \
     jq \
+    libadwaita-1-dev \
     libbz2-dev \
     libffi-dev \
+    libgtk-4-dev \
     libncursesw5-dev \
     liblzma-dev \
     libreadline-dev \
     libsqlite3-dev \
     libssl-dev \
-    libxml2-dev libxmlsec1-dev \
+    libxml2-dev libxml2-utils libxmlsec1-dev \
+    minisign \
     neovim \
     npm \
+    patchelf \
+    pkgconf \
     python3-dev python3-pip python3-venv \
     ripgrep \
     rustup \
@@ -119,8 +125,9 @@ mise install rust@latest
 mise install go@latest
 mise install node@22 node@24
 mise install packer@latest
+mise install zig@0.15.2
 
-mise use --global python@3.10 rust@latest go@latest node@24 packer@latest
+mise use --global python@3.10 rust@latest go@latest node@24 packer@latest zig@0.15.2
 
 rustup component add rust-analyzer
 
@@ -129,6 +136,7 @@ go install github.com/isaacphi/mcp-language-server@latest
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-ghostty"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -
