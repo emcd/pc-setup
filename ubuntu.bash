@@ -29,6 +29,7 @@ sudo apt-get install --yes \
     fd-find \
     fzf \
     g++ \
+    gettext \
     gh \
     git-lfs \
     helium-bin \
@@ -47,6 +48,7 @@ sudo apt-get install --yes \
     neovim \
     npm \
     patchelf \
+    pkgconf \
     python3-dev python3-pip python3-venv \
     ripgrep \
     rustup \
