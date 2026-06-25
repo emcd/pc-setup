@@ -7,6 +7,8 @@ Configuration and maintenance workspace for PC installations.
 - Full workstation bootstrap (Ubuntu): `bash ~/src/pc-setup/ubuntu.bash`
 - Canonical agent harness/CLI installer: `bash ./scripts/install-agent-harnesses`
 - Terminal font and glyph fallback installer: `bash ./scripts/deploy-terminal-font-config`
+- Agentmux host config backup and deploy: `bash ./scripts/deploy-agentmux-host-config`
+- Ghostty terminal emulator installation: `bash ./scripts/install-ghostty`
 
 The canonical installer is the shared target for global agent CLI installation
 and is intended to avoid duplicated installer logic across repositories.
