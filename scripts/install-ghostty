@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# Install Ghostty from upstream signed source tarball.
+#
+# The build runs as the invoking user; the install step uses sudo to
+# write to /usr/local. The Zig flag set MUST be identical between the
+# build and install invocations -- otherwise the link step reruns and
+# (when the missing flag is -fno-sys=gtk4-layer-shell) fails because
+# Ubuntu 24.04 / Debian 12 do not package gtk4-layer-shell in apt.
+# See src/build/GhosttyExe.zig and src/build/Config.zig in the Ghostty
+# source tree for the -Dpatch-rpath behavior.
+
+set -eu -o pipefail
+
+repo_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+temporary_dir="${repo_root}/.auxiliary/temporary/ghostty-build"
+install_prefix="${GHOSTTY_INSTALL_PREFIX:-/usr/local}"
+ghostty_version="${GHOSTTY_VERSION:-1.3.1}"
+zig_version="${GHOSTTY_ZIG_VERSION:-0.15.2}"
+
+ghostty_minisign_pubkey='RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV'
+ghostty_base_url='https://release.files.ghostty.org'
+ghostty_tarball_url="${ghostty_base_url}/${ghostty_version}/ghostty-${ghostty_version}.tar.gz"
+ghostty_minisig_url="${ghostty_tarball_url}.minisig"
+
+zig_binary="${HOME}/.local/share/mise/installs/zig/${zig_version}/zig"
+
+# Prerequisite checks.
+command -v mise >/dev/null || {
+    echo "error: 'mise' is required (see ubuntu.bash)" >&2; exit 1; }
+command -v minisign >/dev/null || {
+    echo "error: 'minisign' is required (install via apt)" >&2; exit 1; }
+command -v patchelf >/dev/null || {
+    echo "error: 'patchelf' is required (install via apt)" >&2; exit 1; }
+[[ -x "${zig_binary}" ]] || {
+    echo "error: Zig ${zig_version} not found at ${zig_binary}" >&2
+    echo "       install with: mise install zig@${zig_version}" >&2
+    exit 1; }
+
+work_dir="${temporary_dir}/ghostty-${ghostty_version}"
+tarball="${work_dir}.tar.gz"
+minisig="${tarball}.minisig"
+
+mkdir --parents "${temporary_dir}"
+
+# Download (or reuse) tarball + signature.
+for pair in "${ghostty_tarball_url}|${tarball}" "${ghostty_minisig_url}|${minisig}"; do
+    url="${pair%|*}"
+    destination="${pair#*|}"
+    if [[ ! -s "${destination}" ]]; then
+        echo "downloading $(basename "${destination}")..."
+        curl --fail --location --show-error --silent --output "${destination}" "${url}"
+    fi
+done
+
+echo "verifying minisign signature for ghostty ${ghostty_version}..."
+minisign -Vm "${tarball}" -P "${ghostty_minisign_pubkey}"
+
+# Re-extract on every run so a stale source tree can't poison the build.
+rm -rf "${work_dir}"
+mkdir --parents "${work_dir}"
+echo "extracting ${tarball}..."
+tar -C "${work_dir}" --strip-components=1 -xf "${tarball}"
+
+# Build as the invoking user; no -p here so artifacts stage into zig-out.
+echo "building ghostty ${ghostty_version} with zig ${zig_version}..."
+( cd "${work_dir}" \
+    && "${zig_binary}" build \
+        -Doptimize=ReleaseFast \
+        -fno-sys=gtk4-layer-shell \
+        -Dpatch-rpath="${install_prefix}/lib" )
+
+# Install with sudo. Same flag set as the build, plus -p; the cache key
+# requires all flags to match across build and install invocations.
+echo "installing ghostty to ${install_prefix} (sudo)..."
+sudo "${zig_binary}" build install -p "${install_prefix}" \
+    -Doptimize=ReleaseFast \
+    -fno-sys=gtk4-layer-shell \
+    -Dpatch-rpath="${install_prefix}/lib"
+
+# Refresh the desktop entries cache (sudo because /usr/local is root-owned).
+if command -v update-desktop-database >/dev/null; then
+    sudo update-desktop-database "${install_prefix}/share/applications" \
+        || echo "warning: update-desktop-database failed" >&2
+fi
+
+echo
+echo "ghostty ${ghostty_version} installed to ${install_prefix}."
+echo "verify with: ${install_prefix}/bin/ghostty --version"
+echo "to autostart the D-Bus-activatable service per user:"
+echo "    systemctl --user enable --now app-com.mitchellh.ghostty.service"
