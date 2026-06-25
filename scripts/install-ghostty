@@ -72,11 +72,14 @@ echo "building ghostty ${ghostty_version} with zig ${zig_version}..."
 
 # Install with sudo. Same flag set as the build, plus -p; the cache key
 # requires all flags to match across build and install invocations.
+# Run from ${work_dir} so zig finds Ghostty's build.zig, since this
+# script may be invoked from any cwd on a clean bootstrap.
 echo "installing ghostty to ${install_prefix} (sudo)..."
-sudo "${zig_binary}" build install -p "${install_prefix}" \
-    -Doptimize=ReleaseFast \
-    -fno-sys=gtk4-layer-shell \
-    -Dpatch-rpath="${install_prefix}/lib"
+( cd "${work_dir}" \
+    && sudo "${zig_binary}" build install -p "${install_prefix}" \
+        -Doptimize=ReleaseFast \
+        -fno-sys=gtk4-layer-shell \
+        -Dpatch-rpath="${install_prefix}/lib" )
 
 # Refresh the desktop entries cache (sudo because /usr/local is root-owned).
 if command -v update-desktop-database >/dev/null; then
