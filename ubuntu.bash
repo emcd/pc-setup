@@ -133,6 +133,13 @@ rustup component add rust-analyzer
 
 go install github.com/isaacphi/mcp-language-server@latest
 
+sudo tee /etc/sysctl.d/99-inotify.conf >/dev/null <<'EOF'
+# Managed by pc-setup bootstrap.
+fs.inotify.max_user_instances = 1024
+fs.inotify.max_user_watches = 524288
+EOF
+sudo sysctl -p /etc/sysctl.d/99-inotify.conf
+
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
