@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+user_name="$( id --user --name )"
+
+for command in fuse-overlayfs newgidmap newuidmap podman slirp4netns; do
+    command -v "${command}" >/dev/null || {
+        echo "error: '${command}' is required for rootless Podman" >&2
+        exit 1
+    }
+done
+
+[[ "$( stat --file-system --format=%T /sys/fs/cgroup )" == cgroup2fs ]] || {
+    echo "error: rootless Podman Quadlets require cgroup v2" >&2
+    exit 1
+}
+
+grep --quiet "^${user_name}:" /etc/subuid || {
+    echo "error: no subordinate UID range configured for ${user_name}" >&2
+    exit 1
+}
+grep --quiet "^${user_name}:" /etc/subgid || {
+    echo "error: no subordinate GID range configured for ${user_name}" >&2
+    exit 1
+}
+
+[[ "$( podman info --format '{{.Host.CgroupsVersion}}' )" == v2 ]] || {
+    echo "error: Podman did not report cgroup v2" >&2
+    exit 1
+}
+
+podman unshare true
+
+echo "rootless Podman prerequisites verified"

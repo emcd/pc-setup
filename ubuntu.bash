@@ -27,6 +27,7 @@ sudo apt-get install --yes \
     bubblewrap \
     build-essential \
     fd-find \
+    fuse-overlayfs \
     fzf \
     g++ \
     gettext \
@@ -48,13 +49,16 @@ sudo apt-get install --yes \
     neovim \
     npm \
     patchelf \
+    podman \
     pkgconf \
     python3-dev python3-pip python3-venv \
     ripgrep \
     rustup \
     socat \
+    slirp4netns \
     tk-dev \
     unzip \
+    uidmap \
     vim \
     xclip \
     xz-utils \
@@ -86,6 +90,7 @@ source "${HOME}/.bashrc"
 
 mkdir --parents "${HOME}/.local/installations"
 mkdir --parents "${XDG_DATA_HOME}/bash-completion/completions"
+mkdir --parents "${XDG_CONFIG_HOME}/containers/systemd"
 
 # TODO: Import SSH private keys.
 # TODO: Import GPG private keys.
@@ -144,6 +149,7 @@ bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-ghostty"
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/validate-rootless-podman"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -
