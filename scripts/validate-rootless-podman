@@ -30,6 +30,27 @@ grep --quiet "^${user_name}:" /etc/subgid || {
     exit 1
 }
 
+[[ "$( podman info --format '{{.Host.Security.Rootless}}' )" == true ]] || {
+    echo "error: Podman did not report rootless mode" >&2
+    exit 1
+}
+
+[[ "$( podman info --format '{{.Store.GraphDriverName}}' )" == overlay ]] || {
+    echo "error: Podman did not report the overlay storage driver" >&2
+    exit 1
+}
+
+[[ "$( podman info --format '{{.Host.NetworkBackend}}' )" == netavark ]] || {
+    echo "error: Podman did not report the netavark network backend" >&2
+    exit 1
+}
+
+quadlet_directory="${XDG_CONFIG_HOME:-${HOME}/.config}/containers/systemd"
+[[ -d "${quadlet_directory}" ]] || {
+    echo "error: rootless Quadlet directory is missing: ${quadlet_directory}" >&2
+    exit 1
+}
+
 podman unshare true
 
 echo "rootless Podman prerequisites verified"

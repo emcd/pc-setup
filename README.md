@@ -18,8 +18,9 @@ and is intended to avoid duplicated installer logic across repositories.
 
 `ubuntu.bash` installs Podman with the `uidmap`, `slirp4netns`, and
 `fuse-overlayfs` helpers required for rootless containers, then validates the
-subordinate UID/GID ranges and cgroup v2 support. It creates
-`~/.config/containers/systemd/` for future rootless Quadlet units.
+subordinate UID/GID ranges, rootless mode, cgroup v2, overlay storage, and
+netavark networking. It creates and validates `~/.config/containers/systemd/`
+for future rootless Quadlet units.
 
 Use `--userns=keep-id` for agent containers that bind-mount host worktrees.
 Ubuntu uses AppArmor; do not apply SELinux-specific `:z` or `:Z` volume labels.
