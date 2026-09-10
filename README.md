@@ -10,6 +10,9 @@ Configuration and maintenance workspace for PC installations.
 - Agentmux host config backup and deploy: `bash ./scripts/deploy-agentmux-host-config`
 - Ghostty terminal emulator installation: `bash ./scripts/install-ghostty`
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
+- Cistella dogfood image: `bash ./scripts/build-image` then `bash ./scripts/validate-image`
+  (`bash ./scripts/build-image --no-cache` after pin or Containerfile changes).
+  Tag: `cistella/opencode:local`.
 
 The canonical installer is the shared target for global agent CLI installation
 and is intended to avoid duplicated installer logic across repositories.

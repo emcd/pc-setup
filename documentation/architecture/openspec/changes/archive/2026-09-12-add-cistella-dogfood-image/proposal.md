@@ -26,5 +26,5 @@ Cistella dogfood currently points at `localhost/cistella/opencode:example`, a no
 ## Impact
 
 - Affected specs: new `agent-images` capability.
-- Affected code: `images/cistella/opencode/**`, `data/terminfos/**`, `scripts/update-ghostty-terminfo.sh`, `scripts/build-image`, `scripts/validate-image`, README bootstrap section.
+- Affected code: `images/cistella/opencode/**`, `scripts/build-image`, `scripts/validate-image`, README bootstrap section.
 - Cistella impact: dogfood profile `image` retargets to `cistella/opencode:local` once the tag exists. No driver change. Follow-up (not in this change): ask Cistella Owner to move example pins from Bookworm to Trixie.

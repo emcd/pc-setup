@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+image_tag="cistella/opencode:local"
+
+# shellcheck disable=SC1091
+. "${repository_root}/images/cistella/opencode/pins.env"
+
+if ! podman image exists "${image_tag}"; then
+    echo "error: image ${image_tag} does not exist" >&2
+    exit 1
+fi
+
+podman run --rm --userns=keep-id --env TERM=xterm-ghostty "${image_tag}" \
+    sh -c 'infocmp xterm-ghostty >/dev/null && test "$(tput colors)" = "256"'
+
+podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_tag}" \
+    sh -c '
+        test "$(command -v opencode)" = "/usr/local/bin/opencode"
+        test "$(command -v agentmux)" = "/usr/local/bin/agentmux"
+        test "$(command -v openspec)" = "/usr/local/bin/openspec"
+        test "$(command -v nbspec)" = "/usr/local/bin/nbspec"
+        test "$(command -v nb-mcp)" = "/usr/local/bin/nb-mcp"
+        test "$(command -v nb)" = "/usr/local/bin/nb"
+        test "$(command -v git)" = "/usr/bin/git"
+        test "$(command -v git-lfs)" = "/usr/bin/git-lfs"
+        test "$(command -v tmux)" = "/usr/local/bin/tmux"
+        test -x /usr/bin/cc
+    '
+
+podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
+    sh -c "opencode --version | grep --quiet '${OPENCODE_VERSION}'"
+
+podman run --rm --userns=keep-id "${image_tag}" cc --version >/dev/null
+
+podman run --rm --userns=keep-id "${image_tag}" tmux -V | grep --quiet "${TMUX_VERSION}"
+
+echo "${image_tag} ok"

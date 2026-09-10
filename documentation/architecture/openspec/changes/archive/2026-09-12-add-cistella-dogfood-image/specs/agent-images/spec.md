@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Digest-pinned Debian trixie-slim base
-The production OpenCode image SHALL use `debian:trixie-slim` pinned by image digest. The build SHALL fail if the pulled digest does not match the pin.
+The production OpenCode image SHALL use `debian:trixie-slim` pinned by multi-arch index digest. The build SHALL fail if the pulled digest does not match the pin. The image SHALL build for `amd64` and `arm64` by selecting arch-specific artifact URLs and checksums from `TARGETARCH`.
 
 #### Scenario: Digest pin honored
 - **WHEN** the image is built from the Containerfile
@@ -12,15 +12,11 @@ The production OpenCode image SHALL use `debian:trixie-slim` pinned by image dig
 - **THEN** the build fails and does not tag `cistella/opencode:local`
 
 ### Requirement: Baked Ghostty terminfo
-The image SHALL install `ncurses-bin` and SHALL bake a vendored `xterm-ghostty` terminfo sourced from Ghostty 1.3.1 with `tic -x` into `/usr/share/terminfo`. `scripts/update-ghostty-terminfo.sh` SHALL fetch that entry from the upstream Ghostty 1.3.1 release into `data/terminfos/` and record the version beside it so every image can copy the same files. Runtime SHALL NOT require a host `TERMINFO` environment variable or a host terminfo bind-mount.
+The image SHALL install `ncurses-bin` and `ncurses-term` and SHALL expose Trixie's `ghostty` terminfo as `xterm-ghostty` (symlink under `/usr/share/terminfo/x/`). Runtime SHALL NOT require a host `TERMINFO` environment variable or a host terminfo bind-mount.
 
 #### Scenario: Ghostty terminfo present without host mounts
 - **WHEN** `podman run --rm --userns=keep-id -e TERM=xterm-ghostty` runs the image without `TERMINFO` and without a host terminfo bind-mount
 - **THEN** `infocmp xterm-ghostty` succeeds and `tput colors` is `256`
-
-#### Scenario: Terminfo sync records the Ghostty release
-- **WHEN** `scripts/update-ghostty-terminfo.sh` runs for Ghostty 1.3.1
-- **THEN** `data/terminfos/xterm-ghostty.terminfo` is written and the Ghostty 1.3.1 version is recorded beside it
 
 ### Requirement: User-independent binary paths
 The image SHALL place harness and tooling binaries at user-independent paths (`/usr/local/bin`, `/usr/share`, `/opt`) and SHALL NOT pre-seed per-user writable state (`~/.local`, `~/.config`). Writable state SHALL come only from profile allowlist mounts.

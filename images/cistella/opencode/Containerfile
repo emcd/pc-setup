@@ -1,0 +1,112 @@
+ARG RUST_IMAGE
+FROM ${RUST_IMAGE} AS rust
+
+ARG DEBIAN_IMAGE
+FROM ${DEBIAN_IMAGE} AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG NODE_VERSION
+ARG NODE_SHA256_ARM64
+ARG NODE_SHA256_AMD64
+ARG OPENCODE_VERSION
+ARG OPENCODE_SHA256_ARM64
+ARG OPENCODE_SHA256_AMD64
+ARG OPENSPEC_VERSION
+ARG OPENSPEC_URL
+ARG OPENSPEC_INTEGRITY
+ARG AGENTMUX_VERSION
+ARG NBSPEC_VERSION
+ARG NB_MCP_VERSION
+ARG NB_VERSION
+ARG NB_URL
+ARG NB_SHA256
+ARG TMUX_VERSION
+ARG TMUX_URL
+ARG TMUX_SHA256
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        libevent-dev \
+        libncurses-dev \
+        libssl-dev \
+        openssl \
+        pkg-config \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=rust /usr/local/cargo /opt/rust/cargo
+COPY --from=rust /usr/local/rustup /opt/rust/rustup
+ENV CARGO_HOME=/opt/rust/cargo
+ENV RUSTUP_HOME=/opt/rust/rustup
+ENV PATH=/opt/rust/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN cargo install --root /usr/local --locked --version "${AGENTMUX_VERSION}" agentmux \
+    && cargo install --root /usr/local --locked --version "${NBSPEC_VERSION}" nbspec \
+    && cargo install --root /usr/local --locked --version "${NB_MCP_VERSION}" nb-mcp-server
+
+RUN curl --fail --location --show-error --silent --output /tmp/tmux.tar.gz "${TMUX_URL}" \
+    && echo "${TMUX_SHA256}  /tmp/tmux.tar.gz" | sha256sum --check --strict \
+    && mkdir /tmp/tmux-src \
+    && tar --extract --gzip --file /tmp/tmux.tar.gz --directory /tmp/tmux-src --strip-components=1 \
+    && cd /tmp/tmux-src \
+    && ./configure --prefix=/usr/local \
+    && make --jobs="$(nproc)" \
+    && make install \
+    && rm --recursive --force /tmp/tmux.tar.gz /tmp/tmux-src
+
+RUN set -eu \
+    && case "${TARGETARCH}" in \
+         arm64) node_plat=linux-arm64; node_sha="${NODE_SHA256_ARM64}"; oc_plat=linux-arm64; oc_sha="${OPENCODE_SHA256_ARM64}" ;; \
+         amd64) node_plat=linux-x64; node_sha="${NODE_SHA256_AMD64}"; oc_plat=linux-x64; oc_sha="${OPENCODE_SHA256_AMD64}" ;; \
+         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl --fail --location --show-error --silent --output /tmp/node.tar.xz \
+         "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${node_plat}.tar.xz" \
+    && echo "${node_sha}  /tmp/node.tar.xz" | sha256sum --check --strict \
+    && tar --extract --xz --file /tmp/node.tar.xz --directory /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && curl --fail --location --show-error --silent --output /tmp/opencode.tar.gz \
+         "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-${oc_plat}.tar.gz" \
+    && echo "${oc_sha}  /tmp/opencode.tar.gz" | sha256sum --check --strict \
+    && tar --extract --gzip --file /tmp/opencode.tar.gz --directory /usr/local/bin \
+    && chmod +x /usr/local/bin/opencode \
+    && rm /tmp/opencode.tar.gz \
+    && curl --fail --location --show-error --silent --output /tmp/openspec.tgz "${OPENSPEC_URL}" \
+    && actual_b64="$(openssl dgst -sha512 -binary /tmp/openspec.tgz | openssl base64 -A)" \
+    && expected_b64="${OPENSPEC_INTEGRITY#sha512-}" \
+    && test "${actual_b64}" = "${expected_b64}" \
+    && PATH="/usr/local/bin:${PATH}" npm install --global --prefix /usr/local /tmp/openspec.tgz \
+    && rm /tmp/openspec.tgz \
+    && curl --fail --location --show-error --silent --output /usr/local/bin/nb "${NB_URL}" \
+    && echo "${NB_SHA256}  /usr/local/bin/nb" | sha256sum --check --strict \
+    && chmod +x /usr/local/bin/nb
+
+ARG DEBIAN_IMAGE
+FROM ${DEBIAN_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+        git-lfs \
+        libevent-2.1-7t64 \
+        libevent-core-2.1-7t64 \
+        libncursesw6 \
+        libssl-dev \
+        ncurses-bin \
+        ncurses-term \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir --parents /usr/share/terminfo/x \
+    && ln --symbolic ../g/ghostty /usr/share/terminfo/x/xterm-ghostty
+
+COPY --from=builder /usr/local /usr/local
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
