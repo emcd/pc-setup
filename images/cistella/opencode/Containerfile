@@ -95,15 +95,21 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         build-essential \
         ca-certificates \
+        file \
         git \
         git-lfs \
         libevent-2.1-7t64 \
         libevent-core-2.1-7t64 \
         libncursesw6 \
         libssl-dev \
+        nano \
         ncurses-bin \
         ncurses-term \
         pkg-config \
+        procps \
+        python3 \
+        ripgrep \
+        xxd \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir --parents /usr/share/terminfo/x \
     && ln --symbolic ../g/ghostty /usr/share/terminfo/x/xterm-ghostty
