@@ -3,49 +3,67 @@ format-version = 1
 autostart = false
 
 [[sessions]]
+id = 'reviewer'
+name = 'Reviewer General'
+directory = '/home/me/src/WORKTREES/home/pyf-reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'template'
+name = 'Template Owner'
+directory = '/home/me/src/python-project-common'
+coder = 'opencode'
+
+[[sessions]]
 id = 'absence'
-name = 'Absence Maintainer'
+name = 'Absence Owner'
 directory = '/home/me/src/python-absence'
 coder = 'opencode'
 
 [[sessions]]
 id = 'accretive'
-name = 'Accretive Maintainer'
+name = 'Accretive Owner'
 directory = '/home/me/src/python-accretive'
 coder = 'opencode'
 
 [[sessions]]
 id = 'appcore'
-name = 'Appcore Maintainer'
+name = 'Appcore Owner'
 directory = '/home/me/src/python-appcore'
 coder = 'opencode'
 
 [[sessions]]
 id = 'classcore'
-name = 'Classcore Maintainer'
+name = 'Classcore Owner'
 directory = '/home/me/src/python-classcore'
 coder = 'opencode'
 
 [[sessions]]
 id = 'dynadoc'
-name = 'Dynadoc Maintainer'
+name = 'Dynadoc Owner'
 directory = '/home/me/src/python-dynadoc'
 coder = 'opencode'
 
 [[sessions]]
 id = 'falsifier'
-name = 'Falsifier Maintainer'
+name = 'Falsifier Owner'
 directory = '/home/me/src/python-falsifier'
 coder = 'opencode'
 
 [[sessions]]
 id = 'frigid'
-name = 'Frigid Maintainer'
+name = 'Frigid Owner'
 directory = '/home/me/src/python-frigid'
 coder = 'opencode'
 
 [[sessions]]
 id = 'ictr'
-name = 'Ictr Maintainer'
+name = 'Ictr Owner'
 directory = '/home/me/src/python-ictr'
+coder = 'opencode'
+
+[[sessions]]
+id = 'scent'
+name = 'Scent Owner'
+directory = '/home/me/src/python-scent'
 coder = 'opencode'

@@ -1,0 +1,39 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'fleet-advisor'
+name = 'Fleet Advisor'
+directory = '/home/me/src/WORKTREES/home/advisor'
+coder = 'claude'
+
+[[sessions]]
+id = 'agentmux-advisor'
+name = 'Agentmux Advisor'
+directory = '/home/me/src/WORKTREES/agentmux/advisor'
+coder = 'claude'
+
+[[sessions]]
+id = 'agentmux-agents'
+name = 'Agentmux Agents Engineer'
+directory = '/home/me/src/WORKTREES/agentmux/agents'
+coder = 'claude'
+
+[[sessions]]
+id = 'agentmux-backend'
+name = 'Agentmux Backend Engineer'
+directory = '/home/me/src/WORKTREES/agentmux/backend'
+coder = 'claude'
+
+[[sessions]]
+id = 'agentmux-frontend'
+name = 'Agentmux Frontend Engineer'
+directory = '/home/me/src/WORKTREES/agentmux/frontend'
+coder = 'claude'
+
+[[sessions]]
+id = 'litrpg-advisor'
+name = 'Litrpg Advisor'
+directory = '/home/me/src/WORKTREES/litrpg/advisor'
+coder = 'claude'

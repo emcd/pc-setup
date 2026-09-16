@@ -5,21 +5,28 @@ set -eu -o pipefail
 repo_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
 
-source_bundle_dir="${repo_root}/configuration/agentmux/bundles"
+source_config_dir="${repo_root}/configuration/agentmux"
+source_bundle_dir="${source_config_dir}/bundles"
 source_systemd_dir="${repo_root}/configuration/systemd/user"
 
-target_bundle_dir="${config_home}/agentmux/bundles"
+target_config_dir="${config_home}/agentmux"
+target_bundle_dir="${target_config_dir}/bundles"
 target_systemd_dir="${config_home}/systemd/user"
 
 mkdir --parents "${target_bundle_dir}" "${target_systemd_dir}"
 
 shopt -s nullglob
+config_files=( "${source_config_dir}"/*.toml )
 bundle_files=( "${source_bundle_dir}"/*.toml )
 systemd_files=(
     "${source_systemd_dir}/agentmux.service"
     "${source_systemd_dir}/agentmux-debug.service"
 )
 shopt -u nullglob
+
+for file in "${config_files[@]}"; do
+    install --mode=0644 "${file}" "${target_config_dir}/"
+done
 
 for file in "${bundle_files[@]}"; do
     install --mode=0644 "${file}" "${target_bundle_dir}/"
@@ -36,5 +43,6 @@ if command -v systemctl >/dev/null; then
     fi
 fi
 
+echo "deployed agentmux config to ${target_config_dir}"
 echo "deployed agentmux bundles to ${target_bundle_dir}"
 echo "deployed agentmux user units to ${target_systemd_dir}"

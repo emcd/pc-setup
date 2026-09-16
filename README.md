@@ -45,10 +45,18 @@ open a new terminal after deployment or configure the profile to use
 
 ## Agentmux Config Backup
 
-- Portable bundle backup location: `configuration/agentmux/bundles/`
+- Portable production config: `configuration/agentmux/` (`coders.toml`,
+  `policies.toml`, `relay.toml`, `ui.toml`, `users.toml`)
+- Portable production bundles: `configuration/agentmux/bundles/`
+- Agentmux project bundle source: `~/src/agentmux/.auxiliary/configuration/agentmux/bundles/`
+- Agentmux QA bundle backup: `configuration/agentmux-qa/bundles/` (from
+  `~/src/agentmux/.auxiliary/configuration/agentmux-qa/bundles/`)
 - Portable user unit backup location: `configuration/systemd/user/`
 - Host deployment command: `bash ./scripts/deploy-agentmux-host-config`
 - `example.toml` is intentionally not backed up.
+- Live `coder-session-id` fields are stripped from captured bundles.
 
-The deploy script copies bundles to `~/.config/agentmux/bundles` and unit files
-to `~/.config/systemd/user`, then attempts `systemctl --user daemon-reload`.
+The deploy script copies production `*.toml` files to `~/.config/agentmux`,
+production bundles to `~/.config/agentmux/bundles`, and unit files to
+`~/.config/systemd/user`, then attempts `systemctl --user daemon-reload`.
+It does not deploy the QA bundle.

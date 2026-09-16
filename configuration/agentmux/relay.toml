@@ -1,0 +1,61 @@
+# relay-wide configuration
+#
+# This file is optional: a missing relay.toml uses the documented defaults below,
+# so every key here is commented out and shows its default. Relay-wide keys live
+# at the file ROOT (the file is itself the relay configuration table); do NOT nest
+# them under a [relay] table. Unknown keys, wrong value types, and invalid peer
+# entries fail relay startup and `agentmux check configuration` fast rather than
+# silently defaulting.
+
+# Watch the bundles configuration directory and reconcile running bundles when
+# their files change (default true). Set false to freeze the loaded bundle set:
+# add/remove/modify then take effect only on the next relay restart. With
+# watching on, editing a live bundle file tears that bundle down mid-operation,
+# so operators who edit bundles in place may prefer false.
+# Precedence: --no-watch CLI flag > AGENTMUX_RELAY_WATCH_BUNDLES env > this key.
+# watch-bundles = true
+
+# Enforce recognized session credentials on Hello (default false). When true, the
+# `socket-trust` placeholder and any unrecognized token are rejected for session
+# connections. Register at least one principal
+# (`agentmux new peer <session_id>@<bundle>`) BEFORE enabling this, or no client
+# can connect to recover. Application and relay principals always require a
+# recognized token regardless of this setting.
+# Precedence: --require-credentials CLI flag >
+# AGENTMUX_RELAY_REQUIRE_SESSION_CREDENTIALS env > this key.
+# require-session-credentials = false
+
+# Bounded depth of the per-bundle choices queue (default 256; range 1..=4096).
+# This setting resolves from relay.toml or the default only — it has no CLI or
+# environment override.
+# [choices]
+# pending-max = 256
+
+# Outbound peer relay endpoints. Each entry activates cross-relay routing: a
+# `Send`/`Raww` addressed with the bang-path `<session>@<bundle>!<alias>` is
+# forwarded to the peer you locally call `<alias>`. `[[peers]]` is OUTBOUND-ONLY
+# and takes no `scope`: inbound cross-relay authorization is the scope you grant a
+# connecting peer's principal with `new peer <id>@RELAY --scope`, enforced by the
+# target-side ingress filter. Raw peer PSKs are NOT stored here — they remain
+# owner-only under <state-root>/peers/<alias>.psk while the principal store keeps
+# only hashes.
+#   alias      — this relay's LOCAL name for the peer (required): the bang-path
+#                `!<alias>` routing selector and the credential filename stem.
+#                Internal to this relay; the peer never sees it. Grammar: a bare id
+#                (non-empty; no '@', '!', or path separator).
+#   address    — the peer's absolute Unix socket path (required). TCP host:port
+#                endpoints are not yet supported (remote peering is future work).
+#   connect-as — the identity THIS peer issued this relay, presented as
+#                `<connect-as>@RELAY` in Hello when dialing it (required). The peer
+#                registered it via `agentmux new peer <connect-as>@RELAY --scope
+#                <scope>`; it is per-peer because the receiver determines it. Same
+#                bare-id grammar as `alias`.
+# [[peers]]
+# alias = 'west'
+# address = '/run/agentmux/west.sock'
+# connect-as = 'east'
+
+[[peers]]
+alias = 'rnd-main'
+address = '/home/me/src/agentmux/.auxiliary/state/agentmux/relay.sock'
+connect-as = 'production'

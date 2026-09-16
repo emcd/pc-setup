@@ -1,0 +1,10 @@
+# global user sessions
+# default-bundle = 'example'
+default-session = 'user@GLOBAL'
+
+[[sessions]]
+id = 'user@GLOBAL'
+name = 'Operator'
+policy = 'operator'
+
+[sessions.ui]

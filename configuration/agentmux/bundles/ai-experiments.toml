@@ -1,0 +1,27 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'coordinator'
+name = 'Coordinator'
+directory = '/home/me/src/ai-experiments'
+coder = 'opencode'
+
+[[sessions]]
+id = 'providers'
+name = 'BE Providers'
+directory = '/home/me/src/WORKTREES/ai-experiments/providers'
+coder = 'opencode'
+
+[[sessions]]
+id = 'web'
+name = 'FE Web'
+directory = '/home/me/src/WORKTREES/ai-experiments/web'
+coder = 'opencode'
+
+[[sessions]]
+id = 'invocables'
+name = 'BE Invocables'
+directory = '/home/me/src/WORKTREES/ai-experiments/invocables'
+coder = 'opencode'

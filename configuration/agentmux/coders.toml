@@ -1,0 +1,74 @@
+# coder definitions
+format-version = 1
+
+[[coders]]
+id = 'claude'
+
+[coders.tmux]
+initial-command = 'claude'
+resume-command = 'claude --resume {{coder-session-id}}'
+prompt-regex = '(?ms)^[─-]{20,}\s+[>❯]\s+[─-]{20,}'
+prompt-inspect-lines = 6
+prompt-idle-column = 2
+
+[[coders]]
+id = 'codex'
+
+[coders.tmux]
+initial-command = 'codex'
+resume-command = 'codex resume {{coder-session-id}}'
+prompt-regex = '(?ms)^›.*\n\s*\n.*$'
+prompt-inspect-lines = 3
+prompt-idle-column = 2
+
+[[coders]]
+id = 'gemini'
+
+[coders.tmux]
+initial-command = 'gemini'
+resume-command = 'gemini --resume {{coder-session-id}}'
+prompt-regex = '(?ms)^\s*>\s+Type your message.*\n[▄]{20,}\n.*$'
+prompt-inspect-lines = 3
+prompt-idle-column = 3
+
+[[coders]]
+id = 'opencode'
+
+[coders.tmux]
+initial-command = 'opencode'
+resume-command = 'opencode --session {{coder-session-id}}'
+# Matches frame structure only; the "user has pending compose text"
+# guard is delegated to prompt-idle-column (cursor check below), not
+# the regex. Fixes issues/relay/58 defect 2: the prior strict regex
+# required a blank ┃ line above the info row, which false-negatived on
+# sidebar-wrapping layouts (api@agentmux-aux wraps its working-directory
+# path into the input area). pty@c145365 into eb146fa, 2026-07-30.
+prompt-regex = '(?m)^.*┃.*\n\s*╹▀{20,}\s*\n\s+.*\bctrl\+p commands(?:\s+•\s+OpenCode\s+[\d.]+\s*)?\s*$'
+# Prior (pty@3fe6fb8 into eb146fa, corrected 2026-07-30 per
+# issues/tmux/2's second resolution). Kept for revert:
+#prompt-regex = '(?m)^\s*┃\s*\n(?:\s*┃\s*\n)*\s*┃.*\n\s*╹▀{20,}\s*\n\s+.*\bctrl\+p commands(?:\s+•\s+OpenCode\s+[\d.]+\s*)?\s*$'
+# Prior (regressed 322bf80 shape; required the last ┃ line to be
+# non-empty, so a composing draft matched as ready). Kept for revert:
+#prompt-regex = '(?ms)^\s*┃.*\n(?:\s*┃.*\n)*\s*┃\s+\S.*\n\s*╹▀{20,}\n\s+.*\bctrl\+p commands(?:\s+•\s+OpenCode\s+[\d.]+)?$'
+prompt-inspect-lines = 10
+prompt-idle-column = 5
+
+[[coders]]
+id = 'opencode-acp'
+
+[coders.acp]
+channel = 'stdio'
+command = 'opencode acp'
+
+[[coders]]
+id = 'cistella-opencode'
+
+[coders.tmux]
+# Cistella conduct via composed pair form (agentmux 0.10.2 affix grammar).
+# Requires the `opencode` Cistella profile in ~/.config/cistella/profiles/.
+initial-command = "cargo run --quiet -- conduct --profile opencode --label agentmux.session={{bundle-session-id}} --session-directory {{session-directory}}:{{session-directory}} -- opencode --auto"
+resume-command = "cargo run --quiet -- conduct --profile opencode --label agentmux.session={{bundle-session-id}} --session-directory {{session-directory}}:{{session-directory}} -- opencode --auto --session {{coder-session-id}}"
+# Same TUI as stock opencode (prompt block copied from the `opencode` coder).
+prompt-regex = '(?m)^.*┃.*\n\s*╹▀{20,}\s*\n\s+.*\bctrl\+p commands(?:\s+•\s+OpenCode\s+[\d.]+\s*)?\s*$'
+prompt-inspect-lines = 10
+prompt-idle-column = 5

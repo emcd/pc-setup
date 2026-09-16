@@ -1,0 +1,33 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'lead'
+name = 'Lead (Coordinator)'
+directory = '/home/me/src/arbor'
+coder = 'opencode'
+
+[[sessions]]
+id = 'architect'
+name = 'Architect'
+directory = '/home/me/src/CLONES/arbor/architect'
+coder = 'opencode'
+
+[[sessions]]
+id = 'compiler'
+name = 'Compiler Engineer'
+directory = '/home/me/src/CLONES/arbor/compiler'
+coder = 'opencode'
+
+[[sessions]]
+id = 'qa'
+name = 'QA Engineer'
+directory = '/home/me/src/CLONES/arbor/qa'
+coder = 'opencode'
+
+[[sessions]]
+id = 'tooling'
+name = 'Tooling Engineer'
+directory = '/home/me/src/CLONES/arbor/tooling'
+coder = 'opencode'

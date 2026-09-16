@@ -1,0 +1,34 @@
+# authorization policy presets
+format-version = 1
+default = 'default'
+
+[[policies]]
+id = 'default'
+description = 'Conservative same-bundle policy.'
+
+[policies.controls]
+list = 'all'
+look = 'all'
+send = 'all'
+
+[[policies]]
+id = 'operator'
+description = 'Operator policy with cross-namespace inspection/messaging and choice-decision and lifecycle capability.'
+
+[policies.controls]
+choose = 'home'
+list = 'all'
+look = 'all'
+raww = 'all'
+send = 'all'
+updown = 'home'
+
+[policies.controls.new]
+peer = 'all'
+
+[policies.controls.change]
+psk = 'all'
+scope = 'all'
+
+[policies.controls.drop]
+peer = 'all'

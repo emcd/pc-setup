@@ -1,0 +1,10 @@
+format-version = 1
+
+autostart = true
+
+[[sessions]]
+id = 'qa-partner'
+name = 'QA Partner'
+directory = '/home/me/src/WORKTREES/agentmux/qa-partner'
+coder = 'opencode'
+policy = 'coordinator'

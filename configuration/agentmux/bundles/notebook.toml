@@ -1,0 +1,33 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'coordinator'
+name = 'Coordinator'
+directory = '/home/me/src/WORKTREES/nb-mcp-server/coordinator'
+coder = 'opencode'
+
+[[sessions]]
+id = 'reviewer'
+name = 'Reviewer General'
+directory = '/home/me/src/WORKTREES/nb-mcp-server/reviewer'
+coder = 'opencode'
+
+[[sessions]]
+id = 'nb-api'
+name = 'NbApi Owner'
+directory = '/home/me/src/nb-api'
+coder = 'opencode'
+
+[[sessions]]
+id = 'nb-mcp'
+name = 'NbMcp Owner'
+directory = '/home/me/src/nb-mcp-server'
+coder = 'opencode'
+
+[[sessions]]
+id = 'nbspec'
+name = 'Nbspec Owner'
+directory = '/home/me/src/nbspec'
+coder = 'opencode'

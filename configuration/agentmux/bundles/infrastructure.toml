@@ -2,22 +2,22 @@ format-version = 1
 
 autostart = false
 
-# [[sessions]]
-# id = 'scribbles'
-# name = 'Coordinator'
-# directory = '/home/me/src/lm-scribbles'
-# coder = 'opencode'
-
 [[sessions]]
-id = 'home'
+id = 'coordinator'
 name = 'Coordinator'
 directory = '/home/me/src/home'
 coder = 'opencode'
 
 [[sessions]]
-id = 'home-deput'  # Yes, it's a Lowes-y pun.
-name = 'Deputy Coordinator'
-directory = '/home/me/src/WORKTREES/home/deputy'
+id = 'advisor'
+name = 'Advisor'
+directory = '/home/me/src/WORKTREES/home/advisor'
+coder = 'opencode'
+
+[[sessions]]
+id = 'reviewer'
+name = 'Reviewer General'
+directory = '/home/me/src/WORKTREES/home/infras-reviewer'
 coder = 'opencode'
 
 [[sessions]]
@@ -27,15 +27,21 @@ directory = '/home/me/src/agents-common'
 coder = 'opencode'
 
 [[sessions]]
-id = 'agents-xo'
-name = 'Agents XO'
-directory = '/home/me/src/WORKTREES/agents-common/xo'
+id = 'cistella'
+name = 'Cistella Owner'
+directory = '/home/me/src/cistella'
 coder = 'opencode'
 
 [[sessions]]
-id = 'copiertv'
-name = 'Copier TV Owner'
-directory = '/home/me/src/copier-template-validator'
+id = 'cistella-qa'
+name = 'Cistella QA Partner'
+directory = '/home/me/src/CLONES/cistella/qa'
+coder = 'cistella-opencode'
+
+[[sessions]]
+id = 'dispositor'
+name = 'Dispositor Owner'
+directory = '/home/me/src/dispositor'
 coder = 'opencode'
 
 [[sessions]]
@@ -45,39 +51,15 @@ directory = '/home/me/src/mysite'
 coder = 'opencode'
 
 [[sessions]]
-id = 'nb-mcp'
-name = 'Notebook MCP Owner'
-directory = '/home/me/src/nb-mcp-server'
-coder = 'opencode'
-
-[[sessions]]
-id = 'nb-mcp-qa'
-name = 'Notebook MCP QA'
-directory = '/home/me/src/WORKTREES/nb-mcp-server/qa'
-coder = 'opencode'
-
-[[sessions]]
-id = 'nb-mcp-xo'
-name = 'Notebook MCP XO'
-directory = '/home/me/src/WORKTREES/nb-mcp-server/xo'
-coder = 'opencode'
-
-[[sessions]]
 id = 'pc-setup'
 name = 'PC Setup Owner'
 directory = '/home/me/src/pc-setup'
 coder = 'opencode'
 
 [[sessions]]
-id = 'python'
-name = 'Python Owner'
-directory = '/home/me/src/python-project-common'
-coder = 'opencode'
-
-[[sessions]]
-id = 'python-xo'
-name = 'Python XO'
-directory = '/home/me/src/WORKTREES/python-project-common/xo'
+id = 'praetor'
+name = 'Praetor Owner'
+directory = '/home/me/src/praetor'
 coder = 'opencode'
 
 [[sessions]]

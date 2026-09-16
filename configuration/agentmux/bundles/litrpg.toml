@@ -9,12 +9,6 @@ directory = '/home/me/src/litrpg'
 coder = 'opencode'
 
 [[sessions]]
-id = 'advisor'
-name = 'Advisor'
-directory = '/home/me/src/WORKTREES/litrpg/advisor'
-coder = 'claude'
-
-[[sessions]]
 id = 'editor'
 name = 'Editor General'
 directory = '/home/me/src/WORKTREES/litrpg/editor'
@@ -90,6 +84,12 @@ coder = 'opencode'
 id = 'workflows'
 name = 'BE Workflows'
 directory = '/home/me/src/WORKTREES/litrpg/workflows'
+coder = 'opencode'
+
+[[sessions]]
+id = 'assets'
+name = 'Assets Engineer'
+directory = '/home/me/src/WORKTREES/litrpg/assets'
 coder = 'opencode'
 
 [[sessions]]

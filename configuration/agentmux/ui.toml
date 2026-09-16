@@ -1,0 +1,12 @@
+# UI-surface operational defaults.
+#
+# Holds operator preferences for the interactive surfaces (TUI/CLI), kept
+# separate from the users.toml identity/policy file. Read-only: agentmux never
+# writes to this file. A missing ui.toml simply means no configured defaults.
+
+# The bundle the TUI browses by default, and the bundle one-shot `agentmux send`
+# uses when `--bundle` is omitted. Optional. When unset, the interactive TUI
+# falls back to the first available bundle (or an empty browsing context), while
+# `agentmux send` requires an explicit `--bundle`.
+# default-bundle = "example"
+
