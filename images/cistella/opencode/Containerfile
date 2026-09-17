@@ -93,6 +93,7 @@ FROM ${DEBIAN_IMAGE}
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
+        bsdextrautils \
         build-essential \
         ca-certificates \
         file \

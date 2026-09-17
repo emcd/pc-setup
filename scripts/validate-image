@@ -24,6 +24,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v nbspec)" = "/usr/local/bin/nbspec"
         test "$(command -v nb-mcp)" = "/usr/local/bin/nb-mcp"
         test "$(command -v nb)" = "/usr/local/bin/nb"
+        test "$(command -v column)" = "/usr/bin/column"
         test "$(command -v file)" = "/usr/bin/file"
         test "$(command -v git)" = "/usr/bin/git"
         test "$(command -v git-lfs)" = "/usr/bin/git-lfs"
