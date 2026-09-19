@@ -10,6 +10,7 @@ Configuration and maintenance workspace for PC installations.
 - Agentmux host config backup and deploy: `bash ./scripts/deploy-agentmux-host-config`
 - Ghostty terminal emulator installation: `bash ./scripts/install-ghostty`
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
+- Cistella profile mount sources: `bash ./scripts/provision-cistella-mount-sources`
 - Cistella dogfood image: `bash ./scripts/build-image` then `bash ./scripts/validate-image`
   (`bash ./scripts/build-image --no-cache` after pin or Containerfile changes).
   Tag: `cistella/opencode:local`.
@@ -28,6 +29,11 @@ for future rootless Quadlet units.
 Use `--userns=keep-id` for agent containers that bind-mount host worktrees.
 Ubuntu uses AppArmor; do not apply SELinux-specific `:z` or `:Z` volume labels.
 The Cistella project owns container driver profiles and transport validation.
+
+Cistella fail-closes when a profile `host-source` is missing. Until Cistella
+grows an opt-in create flag, PC Setup pre-creates those directories. Cache
+dirs under `~/.cache/cistella/` are user-owned, persist across reboots, and
+are not backed up. First directory: `~/.cache/cistella/cargo`.
 
 ## Terminal Fonts
 

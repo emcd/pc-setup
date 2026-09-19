@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
+cistella_cache="${cache_home}/cistella"
+cargo_home="${cistella_cache}/cargo"
+
+mkdir --parents "${cistella_cache}" "${cargo_home}"
+chmod 0700 "${cistella_cache}" "${cargo_home}"
+
+user_name="$( id --user --name )"
+owner="$( stat --format=%U "${cargo_home}" )"
+[[ "${owner}" == "${user_name}" ]] || {
+    echo "error: ${cargo_home} is owned by ${owner}, expected ${user_name}" >&2
+    exit 1
+}
+
+echo "provisioned ${cargo_home}"

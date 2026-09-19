@@ -150,6 +150,7 @@ bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-ghostty"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/validate-rootless-podman"
+bash "$(dirname "${BASH_SOURCE[0]}")/scripts/provision-cistella-mount-sources"
 # claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 
 curl -L https://raw.githubusercontent.com/catppuccin/gnome-terminal/v1.0.0/install.py | python3 -
