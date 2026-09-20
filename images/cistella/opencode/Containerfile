@@ -122,6 +122,22 @@ RUN curl --fail --location --show-error --silent --output /usr/local/bin/nb "${N
     && echo "${NB_SHA256}  /usr/local/bin/nb" | sha256sum --check --strict \
     && chmod +x /usr/local/bin/nb
 
+ARG GH_VERSION
+ARG GH_SHA256_ARM64
+ARG GH_SHA256_AMD64
+RUN set -eu \
+    && case "${TARGETARCH}" in \
+         arm64) gh_plat=linux_arm64; gh_sha="${GH_SHA256_ARM64}" ;; \
+         amd64) gh_plat=linux_amd64; gh_sha="${GH_SHA256_AMD64}" ;; \
+         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl --fail --location --show-error --silent --output /tmp/gh.tar.gz \
+         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_${gh_plat}.tar.gz" \
+    && echo "${gh_sha}  /tmp/gh.tar.gz" | sha256sum --check --strict \
+    && tar --extract --gzip --file /tmp/gh.tar.gz --directory /tmp \
+    && install --mode=0755 "/tmp/gh_${GH_VERSION}_${gh_plat}/bin/gh" /usr/local/bin/gh \
+    && rm --recursive --force /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_${gh_plat}"
+
 ARG DEBIAN_IMAGE
 FROM ${DEBIAN_IMAGE}
 

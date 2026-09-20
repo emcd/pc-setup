@@ -11,6 +11,7 @@ Configuration and maintenance workspace for PC installations.
 - Ghostty terminal emulator installation: `bash ./scripts/install-ghostty`
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
 - Cistella profile mount sources: `bash ./scripts/provision-cistella-mount-sources`
+- Cistella profile backup and deploy: `bash ./scripts/deploy-cistella-profiles`
 - Cistella dogfood image: `bash ./scripts/build-image` then `bash ./scripts/validate-image`
   (`bash ./scripts/build-image --no-cache` after pin or Containerfile changes).
   Tag: `cistella/opencode:local`.
@@ -33,7 +34,19 @@ The Cistella project owns container driver profiles and transport validation.
 Cistella fail-closes when a profile `host-source` is missing. Until Cistella
 grows an opt-in create flag, PC Setup pre-creates those directories. Cache
 dirs under `~/.cache/cistella/` are user-owned, persist across reboots, and
-are not backed up. First directory: `~/.cache/cistella/cargo`.
+are not backed up. First directory: `~/.cache/cistella/cargo`. Seat GitHub
+CLI config: `~/.config/cistella/auxiliary/gh` (`0700`, not human
+`~/.config/gh`). Do not copy that directory into git. After
+`provision-cistella-mount-sources`, hydrate the PAT interactively from
+the password database:
+
+```bash
+GH_CONFIG_DIR="${HOME}/.config/cistella/auxiliary/gh" \
+  gh auth login --hostname github.com --git-protocol ssh \
+  --skip-ssh-key --insecure-storage --with-token
+```
+
+Then `chmod 600 "${HOME}/.config/cistella/auxiliary/gh/hosts.yml"`.
 
 ## Terminal Fonts
 
@@ -66,3 +79,12 @@ The deploy script copies production `*.toml` files to `~/.config/agentmux`,
 production bundles to `~/.config/agentmux/bundles`, and unit files to
 `~/.config/systemd/user`, then attempts `systemctl --user daemon-reload`.
 It does not deploy the QA bundle.
+
+## Cistella Config Backup
+
+- Portable seat profiles: `configuration/cistella/profiles/`
+  (`opencode.toml`, `cistella-maintainer.toml`)
+- Host deployment command: `bash ./scripts/deploy-cistella-profiles`
+- `default.toml` is Cistella's baked example and is not backed up.
+- Seat `gh` state under `~/.config/cistella/auxiliary/gh` is not backed
+  up. Rehydrate with the one-liner in Rootless Podman above.

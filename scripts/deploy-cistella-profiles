@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+repo_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
+source_profile_dir="${repo_root}/configuration/cistella/profiles"
+target_profile_dir="${config_home}/cistella/profiles"
+
+mkdir --parents "${target_profile_dir}"
+
+shopt -s nullglob
+profile_files=( "${source_profile_dir}"/*.toml )
+shopt -u nullglob
+
+for file in "${profile_files[@]}"; do
+    install --mode=0644 "${file}" "${target_profile_dir}/"
+done
+
+echo "deployed Cistella profiles to ${target_profile_dir}"

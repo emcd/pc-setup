@@ -26,6 +26,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v nb)" = "/usr/local/bin/nb"
         test "$(command -v column)" = "/usr/bin/column"
         test "$(command -v file)" = "/usr/bin/file"
+        test "$(command -v gh)" = "/usr/local/bin/gh"
         test "$(command -v git)" = "/usr/bin/git"
         test "$(command -v git-lfs)" = "/usr/bin/git-lfs"
         test "$(command -v linecheck)" = "/usr/local/bin/linecheck"
@@ -48,5 +49,7 @@ podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${ima
 podman run --rm --userns=keep-id "${image_tag}" cc --version >/dev/null
 
 podman run --rm --userns=keep-id "${image_tag}" tmux -V | grep --quiet "${TMUX_VERSION}"
+
+podman run --rm --userns=keep-id "${image_tag}" gh --version | grep --quiet "${GH_VERSION}"
 
 echo "${image_tag} ok"
