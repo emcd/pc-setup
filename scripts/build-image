@@ -4,7 +4,7 @@ set -eu -o pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image_tag="cistella/opencode:local"
-pins_file="${repository_root}/images/cistella/opencode/pins.env"
+pins_file="${repository_root}/images/cistella/opencode/pins.sh"
 build_args=()
 
 if [[ "${1:-}" == "--no-cache" ]]; then

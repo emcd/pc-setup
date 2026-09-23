@@ -6,7 +6,7 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image_tag="cistella/opencode:local"
 
 # shellcheck disable=SC1091
-. "${repository_root}/images/cistella/opencode/pins.env"
+. "${repository_root}/images/cistella/opencode/pins.sh"
 
 if ! podman image exists "${image_tag}"; then
     echo "error: image ${image_tag} does not exist" >&2
