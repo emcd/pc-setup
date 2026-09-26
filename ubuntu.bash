@@ -26,6 +26,7 @@ sudo apt-get install --yes \
     brave-browser \
     bubblewrap \
     build-essential \
+    crun \
     fd-find \
     fuse-overlayfs \
     fzf \
@@ -91,6 +92,9 @@ source "${HOME}/.bashrc"
 mkdir --parents "${HOME}/.local/installations"
 mkdir --parents "${XDG_DATA_HOME}/bash-completion/completions"
 mkdir --parents "${XDG_CONFIG_HOME}/containers/systemd"
+mkdir --parents "${XDG_CONFIG_HOME}/containers/containers.conf.d"
+cp "$(dirname "${BASH_SOURCE[0]}")/configuration/containers/containers.conf.d/10-runc-default.conf" \
+    "${XDG_CONFIG_HOME}/containers/containers.conf.d/10-runc-default.conf"
 
 # TODO: Import SSH private keys.
 # TODO: Import GPG private keys.

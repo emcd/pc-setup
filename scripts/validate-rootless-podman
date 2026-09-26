@@ -4,7 +4,7 @@ set -eu -o pipefail
 
 user_name="$( id --user --name )"
 
-for command in fuse-overlayfs newgidmap newuidmap podman slirp4netns; do
+for command in crun fuse-overlayfs newgidmap newuidmap podman slirp4netns; do
     command -v "${command}" >/dev/null || {
         echo "error: '${command}' is required for rootless Podman" >&2
         exit 1
@@ -42,6 +42,16 @@ grep --quiet "^${user_name}:" /etc/subgid || {
 
 [[ "$( podman info --format '{{.Host.NetworkBackend}}' )" == netavark ]] || {
     echo "error: Podman did not report the netavark network backend" >&2
+    exit 1
+}
+
+[[ "$( podman info --format '{{.Host.OCIRuntime.Name}}' )" == runc ]] || {
+    echo "error: default OCI runtime must stay runc" >&2
+    exit 1
+}
+
+[[ "$( podman --runtime crun info --format '{{.Host.OCIRuntime.Path}}' )" == /usr/bin/crun ]] || {
+    echo "error: crun is not selectable as an OCI runtime" >&2
     exit 1
 }
 

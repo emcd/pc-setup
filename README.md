@@ -28,7 +28,9 @@ and is intended to avoid duplicated installer logic across repositories.
 `fuse-overlayfs` helpers required for rootless containers, then validates the
 subordinate UID/GID ranges, rootless mode, cgroup v2, overlay storage, and
 netavark networking. It creates and validates `~/.config/containers/systemd/`
-for future rootless Quadlet units.
+for future rootless Quadlet units. It also installs `crun` beside `runc` and
+pins the rootless default runtime to `runc`. Select crun with
+`--runtime crun`.
 
 Use `--userns=keep-id` for agent containers that bind-mount host worktrees.
 Ubuntu uses AppArmor; do not apply SELinux-specific `:z` or `:Z` volume labels.
