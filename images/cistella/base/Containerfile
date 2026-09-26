@@ -74,6 +74,9 @@ ENV UV_TOOL_DIR=/usr/local/share/uv/tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 RUN uv tool install "pre-commit==${PRE_COMMIT_VERSION}"
 
+ARG EMCD_AGENTS_VERSION
+RUN uv tool install "emcd-agents==${EMCD_AGENTS_VERSION}"
+
 ARG NODE_VERSION
 ARG NODE_SHA256_ARM64
 ARG NODE_SHA256_AMD64
