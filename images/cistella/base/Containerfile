@@ -80,6 +80,9 @@ RUN uv tool install "emcd-agents==${EMCD_AGENTS_VERSION}"
 ARG HATCH_VERSION
 RUN uv tool install "hatch==${HATCH_VERSION}"
 
+ARG COPIER_VERSION
+RUN uv tool install "copier==${COPIER_VERSION}"
+
 ARG NODE_VERSION
 ARG NODE_SHA256_ARM64
 ARG NODE_SHA256_AMD64

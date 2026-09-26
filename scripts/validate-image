@@ -36,6 +36,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
     sh -c '
         test "$(command -v agentmux)" = "/usr/local/bin/agentmux"
         test "$(command -v agentsmgr)" = "/usr/local/bin/agentsmgr"
+        test "$(command -v copier)" = "/usr/local/bin/copier"
         test "$(command -v hatch)" = "/usr/local/bin/hatch"
         test "$(command -v openspec)" = "/usr/local/bin/openspec"
         test "$(command -v nbspec)" = "/usr/local/bin/nbspec"
