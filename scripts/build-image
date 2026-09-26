@@ -3,13 +3,19 @@
 set -eu -o pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image_tag="cistella/opencode:local"
-pins_file="${repository_root}/images/cistella/opencode/pins.sh"
-build_args=()
+target="opencode"
+no_cache=()
 
-if [[ "${1:-}" == "--no-cache" ]]; then
-    build_args+=(--no-cache)
-fi
+for arg in "$@"; do
+    case "${arg}" in
+        --no-cache) no_cache+=(--no-cache) ;;
+        base|opencode|codex) target="${arg}" ;;
+        *)
+            echo "error: unknown argument ${arg}" >&2
+            exit 1
+            ;;
+    esac
+done
 
 case "$(uname -m)" in
     aarch64|arm64) target_arch=arm64 ;;
@@ -19,18 +25,35 @@ case "$(uname -m)" in
         exit 1
         ;;
 esac
-build_args+=(--build-arg "TARGETARCH=${target_arch}")
 
-while IFS= read -r line || [[ -n "${line}" ]]; do
-    line="${line%%#*}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    [[ -z "${line}" ]] && continue
-    build_args+=(--build-arg "${line}")
-done < "${pins_file}"
+build_one() {
+    local name="$1"
+    shift
+    local pins_file="${repository_root}/images/cistella/${name}/pins.sh"
+    local -a build_args=(--build-arg "TARGETARCH=${target_arch}")
+    local line
 
-cd "${repository_root}"
-podman build \
-    "${build_args[@]}" \
-    --file images/cistella/opencode/Containerfile \
-    --tag "${image_tag}" \
-    images/cistella/opencode
+    build_args+=("$@")
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "${line}" ]] && continue
+        build_args+=(--build-arg "${line}")
+    done < "${pins_file}"
+
+    podman build \
+        "${build_args[@]}" \
+        --file "${repository_root}/images/cistella/${name}/Containerfile" \
+        --tag "cistella/${name}:local" \
+        "${repository_root}/images/cistella/${name}"
+}
+
+if [[ "${target}" == "base" ]]; then
+    build_one base "${no_cache[@]}"
+    exit 0
+fi
+
+build_one base
+# shellcheck disable=SC1091
+. "${repository_root}/images/cistella/base/pins.sh"
+build_one "${target}" "${no_cache[@]}" --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"

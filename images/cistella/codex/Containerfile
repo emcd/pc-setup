@@ -1,0 +1,30 @@
+ARG DEBIAN_IMAGE
+FROM ${DEBIAN_IMAGE} AS fetch
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG TARGETARCH
+ARG CODEX_VERSION
+ARG CODEX_SHA256_ARM64
+ARG CODEX_SHA256_AMD64
+RUN set -eu \
+    && mkdir --parents /opt/harness \
+    && case "${TARGETARCH}" in \
+         arm64) codex_plat=aarch64-unknown-linux-musl; codex_sha="${CODEX_SHA256_ARM64}" ;; \
+         amd64) codex_plat=x86_64-unknown-linux-musl; codex_sha="${CODEX_SHA256_AMD64}" ;; \
+         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl --fail --location --show-error --silent --output /tmp/codex.tar.gz \
+         "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${codex_plat}.tar.gz" \
+    && echo "${codex_sha}  /tmp/codex.tar.gz" | sha256sum --check --strict \
+    && tar --extract --gzip --file /tmp/codex.tar.gz --directory /tmp \
+    && install --mode=0755 "/tmp/codex-${codex_plat}" /opt/harness/codex \
+    && rm /tmp/codex.tar.gz
+
+FROM localhost/cistella/base:local
+COPY --from=fetch /opt/harness/codex /usr/local/bin/codex

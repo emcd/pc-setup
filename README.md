@@ -12,9 +12,12 @@ Configuration and maintenance workspace for PC installations.
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
 - Cistella profile mount sources: `bash ./scripts/provision-cistella-mount-sources`
 - Cistella profile backup and deploy: `bash ./scripts/deploy-cistella-profiles`
-- Cistella dogfood image: `bash ./scripts/build-image` then `bash ./scripts/validate-image`
-  (`bash ./scripts/build-image --no-cache` after pin or Containerfile changes).
-  Tag: `cistella/opencode:local`.
+- Cistella images: `bash ./scripts/build-image [base|opencode|codex]` then
+  `bash ./scripts/validate-image [base|opencode|codex]`. No argument builds the
+  shared base from cache, then the OpenCode image. `--no-cache` applies only
+  to the named image. After a shared pin change, rebuild `base`, then each
+  harness. Tags: `cistella/base:local`, `cistella/opencode:local`,
+  `cistella/codex:local`.
 
 The canonical installer is the shared target for global agent CLI installation
 and is intended to avoid duplicated installer logic across repositories.

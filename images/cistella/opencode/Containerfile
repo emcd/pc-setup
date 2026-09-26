@@ -1,98 +1,19 @@
-ARG RUST_IMAGE
-FROM ${RUST_IMAGE} AS rust
-
 ARG DEBIAN_IMAGE
-FROM ${DEBIAN_IMAGE} AS builder
+FROM ${DEBIAN_IMAGE} AS fetch
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
-        bison \
-        build-essential \
         ca-certificates \
         curl \
-        git \
-        libevent-dev \
-        libncurses-dev \
-        libssl-dev \
-        openssl \
-        pkg-config \
-        xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=rust /usr/local/cargo /opt/rust/cargo
-COPY --from=rust /usr/local/rustup /opt/rust/rustup
-ENV CARGO_HOME=/opt/rust/cargo
-ENV RUSTUP_HOME=/opt/rust/rustup
-ENV PATH=/opt/rust/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-ARG TMUX_VERSION
-ARG TMUX_URL
-ARG TMUX_SHA256
-RUN curl --fail --location --show-error --silent --output /tmp/tmux.tar.gz "${TMUX_URL}" \
-    && echo "${TMUX_SHA256}  /tmp/tmux.tar.gz" | sha256sum --check --strict \
-    && mkdir /tmp/tmux-src \
-    && tar --extract --gzip --file /tmp/tmux.tar.gz --directory /tmp/tmux-src --strip-components=1 \
-    && cd /tmp/tmux-src \
-    && ./configure --prefix=/usr/local \
-    && make --jobs="$(nproc)" \
-    && make install \
-    && rm --recursive --force /tmp/tmux.tar.gz /tmp/tmux-src
-
-ARG AGENTMUX_VERSION
-RUN cargo install --root /usr/local --locked --version "${AGENTMUX_VERSION}" agentmux
-
-ARG NBSPEC_VERSION
-RUN cargo install --root /usr/local --locked --version "${NBSPEC_VERSION}" nbspec
-
-ARG NB_MCP_VERSION
-RUN cargo install --root /usr/local --locked --version "${NB_MCP_VERSION}" nb-mcp-server
-
-ARG LINECHECK_VERSION
-RUN cargo install --root /usr/local --locked --version "${LINECHECK_VERSION}" linecheck
-
 ARG TARGETARCH
-ARG UV_VERSION
-ARG UV_SHA256_ARM64
-ARG UV_SHA256_AMD64
-RUN set -eu \
-    && case "${TARGETARCH}" in \
-         arm64) uv_plat=aarch64-unknown-linux-gnu; uv_sha="${UV_SHA256_ARM64}" ;; \
-         amd64) uv_plat=x86_64-unknown-linux-gnu; uv_sha="${UV_SHA256_AMD64}" ;; \
-         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-       esac \
-    && curl --fail --location --show-error --silent --output /tmp/uv.tar.gz \
-         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_plat}.tar.gz" \
-    && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum --check --strict \
-    && tar --extract --gzip --file /tmp/uv.tar.gz --directory /usr/local/bin --strip-components=1 \
-    && chmod +x /usr/local/bin/uv /usr/local/bin/uvx \
-    && rm /tmp/uv.tar.gz
-
-ARG PRE_COMMIT_VERSION
-ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
-ENV UV_TOOL_DIR=/usr/local/share/uv/tools
-ENV UV_TOOL_BIN_DIR=/usr/local/bin
-RUN uv tool install "pre-commit==${PRE_COMMIT_VERSION}"
-
-ARG NODE_VERSION
-ARG NODE_SHA256_ARM64
-ARG NODE_SHA256_AMD64
-RUN set -eu \
-    && case "${TARGETARCH}" in \
-         arm64) node_plat=linux-arm64; node_sha="${NODE_SHA256_ARM64}" ;; \
-         amd64) node_plat=linux-x64; node_sha="${NODE_SHA256_AMD64}" ;; \
-         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-       esac \
-    && curl --fail --location --show-error --silent --output /tmp/node.tar.xz \
-         "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${node_plat}.tar.xz" \
-    && echo "${node_sha}  /tmp/node.tar.xz" | sha256sum --check --strict \
-    && tar --extract --xz --file /tmp/node.tar.xz --directory /usr/local --strip-components=1 \
-    && rm /tmp/node.tar.xz
-
 ARG OPENCODE_VERSION
 ARG OPENCODE_SHA256_ARM64
 ARG OPENCODE_SHA256_AMD64
 RUN set -eu \
+    && mkdir --parents /opt/harness \
     && case "${TARGETARCH}" in \
          arm64) oc_plat=linux-arm64; oc_sha="${OPENCODE_SHA256_ARM64}" ;; \
          amd64) oc_plat=linux-x64; oc_sha="${OPENCODE_SHA256_AMD64}" ;; \
@@ -101,72 +22,9 @@ RUN set -eu \
     && curl --fail --location --show-error --silent --output /tmp/opencode.tar.gz \
          "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-${oc_plat}.tar.gz" \
     && echo "${oc_sha}  /tmp/opencode.tar.gz" | sha256sum --check --strict \
-    && tar --extract --gzip --file /tmp/opencode.tar.gz --directory /usr/local/bin \
-    && chmod +x /usr/local/bin/opencode \
+    && tar --extract --gzip --file /tmp/opencode.tar.gz --directory /opt/harness \
+    && chmod +x /opt/harness/opencode \
     && rm /tmp/opencode.tar.gz
 
-ARG OPENSPEC_VERSION
-ARG OPENSPEC_URL
-ARG OPENSPEC_INTEGRITY
-RUN curl --fail --location --show-error --silent --output /tmp/openspec.tgz "${OPENSPEC_URL}" \
-    && actual_b64="$(openssl dgst -sha512 -binary /tmp/openspec.tgz | openssl base64 -A)" \
-    && expected_b64="${OPENSPEC_INTEGRITY#sha512-}" \
-    && test "${actual_b64}" = "${expected_b64}" \
-    && PATH="/usr/local/bin:${PATH}" npm install --global --prefix /usr/local /tmp/openspec.tgz \
-    && rm /tmp/openspec.tgz
-
-ARG NB_VERSION
-ARG NB_URL
-ARG NB_SHA256
-RUN curl --fail --location --show-error --silent --output /usr/local/bin/nb "${NB_URL}" \
-    && echo "${NB_SHA256}  /usr/local/bin/nb" | sha256sum --check --strict \
-    && chmod +x /usr/local/bin/nb
-
-ARG GH_VERSION
-ARG GH_SHA256_ARM64
-ARG GH_SHA256_AMD64
-RUN set -eu \
-    && case "${TARGETARCH}" in \
-         arm64) gh_plat=linux_arm64; gh_sha="${GH_SHA256_ARM64}" ;; \
-         amd64) gh_plat=linux_amd64; gh_sha="${GH_SHA256_AMD64}" ;; \
-         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-       esac \
-    && curl --fail --location --show-error --silent --output /tmp/gh.tar.gz \
-         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_${gh_plat}.tar.gz" \
-    && echo "${gh_sha}  /tmp/gh.tar.gz" | sha256sum --check --strict \
-    && tar --extract --gzip --file /tmp/gh.tar.gz --directory /tmp \
-    && install --mode=0755 "/tmp/gh_${GH_VERSION}_${gh_plat}/bin/gh" /usr/local/bin/gh \
-    && rm --recursive --force /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_${gh_plat}"
-
-ARG DEBIAN_IMAGE
-FROM ${DEBIAN_IMAGE}
-
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
-        bsdextrautils \
-        build-essential \
-        ca-certificates \
-        file \
-        git \
-        git-lfs \
-        libevent-2.1-7t64 \
-        libevent-core-2.1-7t64 \
-        libncursesw6 \
-        libssl-dev \
-        nano \
-        ncurses-bin \
-        openssh-client \
-        ncurses-term \
-        pkg-config \
-        procps \
-        python3 \
-        python3-pip \
-        ripgrep \
-        xxd \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir --parents /usr/share/terminfo/x \
-    && ln --symbolic ../g/ghostty /usr/share/terminfo/x/xterm-ghostty
-
-COPY --from=builder /usr/local /usr/local
-ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+FROM localhost/cistella/base:local
+COPY --from=fetch /opt/harness/opencode /usr/local/bin/opencode
