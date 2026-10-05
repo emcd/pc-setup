@@ -5,6 +5,7 @@ set -eu -o pipefail
 cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
 data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
 user_name="$( id --user --name )"
 
 provision_directory() {
@@ -22,7 +23,8 @@ provision_directory() {
 
 # Container-owned state, in-container taxonomy: host
 # <type>/cistella/in-container/<app> maps to guest <type>/<app>, so seat
-# state never shadows same-named host state. Shared host mounts (rustup,
+# state never shadows same-named host state. Guest XDG state is mounted
+# wholesale from in-container (catch-all). Shared host mounts (rustup,
 # gitconfig, ssh, opencode and agentmux state) pre-exist outside this tree.
 provision_directory "${cache_home}/cistella/in-container/__ROOT__"
 provision_directory "${cache_home}/cistella/in-container/cargo"
@@ -30,5 +32,6 @@ provision_directory "${cache_home}/cistella/in-container/npm"
 provision_directory "${data_home}/cistella/in-container/uv"
 provision_directory "${data_home}/cistella/in-container/emcd-agents"
 provision_directory "${data_home}/cistella/in-container/opentui"
+provision_directory "${state_home}/cistella/in-container"
 provision_directory "${config_home}/cistella/in-container/emcd-agents"
 provision_directory "${config_home}/cistella/in-container/gh"

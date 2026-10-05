@@ -40,7 +40,9 @@ Cistella fail-closes when a profile `host-source` is missing. Until Cistella
 grows an opt-in create flag, PC Setup pre-creates those directories.
 Container-owned state follows the in-container taxonomy: host
 `<type>/cistella/in-container/<app>` maps to guest `<type>/<app>`, so seat
-state never shadows same-named host state. The dirs are user-owned, persist
+state never shadows same-named host state. Guest XDG state is mounted
+wholesale from `~/.local/state/cistella/in-container`. The dirs are
+user-owned, persist
 across reboots, and are not backed up. Seat GitHub CLI config:
 `~/.config/cistella/in-container/gh` (`0700`, not human `~/.config/gh`).
 Do not copy that directory into git. After
