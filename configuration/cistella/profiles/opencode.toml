@@ -1,36 +1,82 @@
-# Canonical OpenCode seat profile: production image, host toolchain,
-# Opencode config/state, nb rc, Agentmux relay and tmux socket.
-# Worktree arrives via --session-directory; project notebooks arrive via
-# --mount declared in the coder entry.
+# OpenCode: Standard agent seat
+
 image = 'cistella/opencode:local'
-credential-surface = 'none'
+credential-surface = { ssh_agent = '/run/user/1000/keyring/ssh' }
 container-home = '{{environment:HOME}}'
 command = ['opencode']
+environment-acceptances = [
+  'AGENTMUX_BUNDLE',
+  'AGENTMUX_SESSION',
+]
 
-[environment]
+[isolator]
+name = 'podman'
+
+[[extensions]]
+name = 'landlock'
+
+[environment-assignments]
 AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
-# Container-owned cargo home (host ~/.cache/cistella/in-container/cargo): registry
-# churn and credentials stay out of the host toolchain.
+BUN_TMPDIR = '/tmp/scratch'
 CARGO_HOME = '{{core:container-home}}/.cargo'
 EDITOR = 'nano'
-# Read-only GitHub CLI config (fine-grained PAT, repo-scoped read-only);
-# empty until the operator hydrates it. Host state lives under
-# ~/.config/cistella/in-container/gh, never human ~/.config/gh (that
-# would shadow the operator OAuth state).
 GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
 PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-# Plain `tmux` attaches to the host infrastructure-bundle server.
+TMPDIR = '/tmp/scratch'
 TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
 
+## Container State (in-container taxonomy)
+
 [[mounts]]
-host-source = '~/.cache/cistella/in-container/cargo'
+host-source = '~/.config/cistella/in-container'
+container-target = '{{core:container-home}}/.config'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/share/cistella/in-container'
+container-target = '{{core:container-home}}/.local/share'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/state/cistella/in-container'
+container-target = '{{core:container-home}}/.local/state'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.cache/cistella/in-container'
+container-target = '{{core:container-home}}/.cache'
+mode = 'rw'
+
+## Tool State (home-level, outside standard ~/type)
+
+[[mounts]]
+host-source = '~/.cargo'
 container-target = '{{core:container-home}}/.cargo'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.npm'
+container-target = '{{core:container-home}}/.npm'
 mode = 'rw'
 
 [[mounts]]
 host-source = '~/.rustup'
 container-target = '{{core:container-home}}/.rustup'
 mode = 'ro'
+
+## Agentmux (shared host config/state)
+
+[[mounts]]
+host-source = '~/.config/agentmux'
+container-target = '{{core:container-home}}/.config/agentmux'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.local/state/agentmux'
+container-target = '{{core:container-home}}/.local/state/agentmux'
+mode = 'rw'
+
+## Harness (shared host config/state)
 
 [[mounts]]
 host-source = '~/.config/opencode'
@@ -47,38 +93,11 @@ host-source = '~/.local/state/opencode'
 container-target = '{{core:container-home}}/.local/state/opencode'
 mode = 'rw'
 
-# Agentmux config is explicitly injected read-only: pre-provisioned host
-# dir mounted RO plus AGENTMUX_CONFIGURATION_DIRECTORY pointing at it.
-# Supplied roots skip hydration (no mkdir) and are only required to exist
-# — the documented least-privilege shape for external-relay seats. (An RW
-# mount also works but grants the container write over seat config.)
-
-[[mounts]]
-host-source = '~/.config/agentmux'
-container-target = '{{core:container-home}}/.config/agentmux'
-mode = 'ro'
-
-# Agentmux relay state (socket dir), RW: the seat must reach the live
-# relay socket and bundle tmux socket. Grouped with the config triple.
-[[mounts]]
-host-source = '~/.local/state/agentmux'
-container-target = '{{core:container-home}}/.local/state/agentmux'
-mode = 'rw'
-
-# Git identity and ssh config, read-only as a temporary measure: nb (and
-# git itself) need user.name/email plus known-hosts/keys inside. Longer
-# term this must not ride along wholesale — private keys visible to the
-# container is ambient authority of the worst kind. Revisit with secrets
-# (cistella:todos/13).
+## Third-Party Configurations
 
 [[mounts]]
 host-source = '~/.gitconfig'
 container-target = '{{core:container-home}}/.gitconfig'
-mode = 'ro'
-
-[[mounts]]
-host-source = '~/.ssh'
-container-target = '{{core:container-home}}/.ssh'
 mode = 'ro'
 
 [[mounts]]
@@ -87,24 +106,19 @@ container-target = '{{core:container-home}}/.nbrc'
 mode = 'ro'
 
 [[mounts]]
-host-source = '~/.config/cistella/in-container/gh'
-container-target = '{{core:container-home}}/.config/gh'
+host-source = '~/.ssh'
+container-target = '{{core:container-home}}/.ssh'
 mode = 'ro'
 
-# Source tree and notebooks collection, read-only for cross-project
-# visibility, except the notebooks collection itself: nb needs to write
-# at the collection root (locks/new notebooks), so it is RW for now.
-# TODO(temporary): understand exactly what nb writes at the root and
-# re-split into RO parent + RW project triple once known.
+## Collections
 
-# Whole-tree ~/src RW (nesting-relaxation, 0.1.0): strict nesting stacks
-# in any mode combination, so pair-form worktrees beneath this ancestor
-# validate. Revisit only if the overlap rule tightens again.
 [[mounts]]
 host-source = '~/src'
 container-target = '{{core:container-home}}/src'
-mode = 'rw'
+mode = 'ro'
 
+# TODO(temporary): understand exactly what nb writes at the root and
+# re-split into RO parent + RW project triple once known.
 [[mounts]]
 host-source = '~/Dropbox/Notes'
 container-target = '{{core:container-home}}/Dropbox/Notes'

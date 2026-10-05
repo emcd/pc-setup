@@ -22,16 +22,18 @@ provision_directory() {
 }
 
 # Container-owned state, in-container taxonomy: host
-# <type>/cistella/in-container/<app> maps to guest <type>/<app>, so seat
-# state never shadows same-named host state. Guest XDG state is mounted
-# wholesale from in-container (catch-all). Shared host mounts (rustup,
-# gitconfig, ssh, opencode and agentmux state) pre-exist outside this tree.
-provision_directory "${cache_home}/cistella/in-container/__ROOT__"
-provision_directory "${cache_home}/cistella/in-container/cargo"
-provision_directory "${cache_home}/cistella/in-container/npm"
-provision_directory "${data_home}/cistella/in-container/uv"
-provision_directory "${data_home}/cistella/in-container/emcd-agents"
-provision_directory "${data_home}/cistella/in-container/opentui"
+# <type>/cistella/in-container maps wholesale to guest <type>, so seat
+# state never shadows same-named host state and per-tool dirs land inside
+# the tree without new mounts. Known content dirs are pre-created for
+# host-side hydration (seat GitHub CLI PAT). Shared host mounts (cargo,
+# npm, rustup, gitconfig, ssh, opencode and agentmux state) pre-exist
+# outside this tree.
+provision_directory "${config_home}/cistella/in-container"
+provision_directory "${data_home}/cistella/in-container"
 provision_directory "${state_home}/cistella/in-container"
+provision_directory "${cache_home}/cistella/in-container"
 provision_directory "${config_home}/cistella/in-container/emcd-agents"
 provision_directory "${config_home}/cistella/in-container/gh"
+provision_directory "${data_home}/cistella/in-container/emcd-agents"
+provision_directory "${data_home}/cistella/in-container/uv"
+provision_directory "${data_home}/cistella/in-container/opentui"

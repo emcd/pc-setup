@@ -39,9 +39,10 @@ The Cistella project owns container driver profiles and transport validation.
 Cistella fail-closes when a profile `host-source` is missing. Until Cistella
 grows an opt-in create flag, PC Setup pre-creates those directories.
 Container-owned state follows the in-container taxonomy: host
-`<type>/cistella/in-container/<app>` maps to guest `<type>/<app>`, so seat
-state never shadows same-named host state. Guest XDG state is mounted
-wholesale from `~/.local/state/cistella/in-container`. The dirs are
+`<type>/cistella/in-container` maps wholesale to guest `<type>`, so seat
+state never shadows same-named host state and per-tool directories land
+inside the tree without new mounts. Home-level tool state (`~/.cargo`,
+`~/.npm`, `~/.rustup`) is shared with the host directly. The dirs are
 user-owned, persist
 across reboots, and are not backed up. Seat GitHub CLI config:
 `~/.config/cistella/in-container/gh` (`0700`, not human `~/.config/gh`).

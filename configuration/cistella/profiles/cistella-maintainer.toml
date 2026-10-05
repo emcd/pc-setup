@@ -1,31 +1,79 @@
-# Maintainer seat: Cistella + Agentmux development from inside a container.
-# Deliberately separate from the opencode seat (never merge): RW over the
-# configs under development is the entire point here. No opencode mounts —
-# the harness is idle; work arrives via exec/enter.
+# Cistella Maintainer: Privileged seat for Cistella development
+
 image = 'cistella/opencode:local'
-# Sign-only agent socket for commit signing (passphrase stays on the
-# host; the seat sees signatures only, never key material). Same-path
-# mount per the credential-surface contract.
 credential-surface = { ssh_agent = '/run/user/1000/keyring/ssh' }
 container-home = '{{environment:HOME}}'
-command = ['sleep', 'infinity']
+command = ['opencode']
+environment-acceptances = [
+  'AGENTMUX_BUNDLE',
+  'AGENTMUX_SESSION',
+]
 
-[environment]
+[isolator]
+name = 'podman'
+
+[[extensions]]
+name = 'landlock'
+
+[environment-assignments]
 AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
+BUN_TMPDIR = '/tmp/scratch'
 CARGO_HOME = '{{core:container-home}}/.cargo'
 EDITOR = 'nano'
-# Read-only GitHub CLI config (fine-grained PAT, repo-scoped read-only);
-# empty until the operator hydrates it. Host state lives under
-# ~/.config/cistella/in-container/gh, never human ~/.config/gh (that
-# would shadow the operator OAuth state).
 GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
 PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-# Plain `tmux` attaches to the host infrastructure-bundle server.
+TMPDIR = '/tmp/scratch'
 TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
 
+## Container State (in-container taxonomy)
+
 [[mounts]]
-host-source = '~/.cache/cistella/in-container/cargo'
+host-source = '~/.config/cistella/in-container'
+container-target = '{{core:container-home}}/.config'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/share/cistella/in-container'
+container-target = '{{core:container-home}}/.local/share'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/state/cistella/in-container'
+container-target = '{{core:container-home}}/.local/state'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.cache/cistella/in-container'
+container-target = '{{core:container-home}}/.cache'
+mode = 'rw'
+
+## Cistella Namespace (privileged seats only)
+
+[[mounts]]
+host-source = '~/.config/cistella'
+container-target = '{{core:container-home}}/.config/cistella'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/share/cistella'
+container-target = '{{core:container-home}}/.local/share/cistella'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.cache/cistella'
+container-target = '{{core:container-home}}/.cache/cistella'
+mode = 'rw'
+
+## Tool State (home-level, outside standard ~/type)
+
+[[mounts]]
+host-source = '~/.cargo'
 container-target = '{{core:container-home}}/.cargo'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.npm'
+container-target = '{{core:container-home}}/.npm'
 mode = 'rw'
 
 [[mounts]]
@@ -33,9 +81,20 @@ host-source = '~/.rustup'
 container-target = '{{core:container-home}}/.rustup'
 mode = 'ro'
 
-# Opencode config/state/share: the seat's agent harness is opencode, so
-# it needs the same shape as the opencode seat (config RO, state and
-# share RW — share carries the session DB for history/resume).
+## Agentmux (shared host config/state)
+
+[[mounts]]
+host-source = '~/.config/agentmux'
+container-target = '{{core:container-home}}/.config/agentmux'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.local/state/agentmux'
+container-target = '{{core:container-home}}/.local/state/agentmux'
+mode = 'rw'
+
+## Harness (shared host config/state)
+
 [[mounts]]
 host-source = '~/.config/opencode'
 container-target = '{{core:container-home}}/.config/opencode'
@@ -51,39 +110,11 @@ host-source = '~/.local/state/opencode'
 container-target = '{{core:container-home}}/.local/state/opencode'
 mode = 'rw'
 
-# Configs under development, RW by design (see header). The agentmux RO
-# injection of the opencode seat stays the least-privilege shape there.
-[[mounts]]
-host-source = '~/.config/agentmux'
-container-target = '{{core:container-home}}/.config/agentmux'
-mode = 'rw'
+## Third-Party Configurations
 
-# Agentmux relay state (socket dir), RW, grouped with the config triple.
-[[mounts]]
-host-source = '~/.local/state/agentmux'
-container-target = '{{core:container-home}}/.local/state/agentmux'
-mode = 'rw'
-
-[[mounts]]
-host-source = '~/.config/cistella'
-container-target = '{{core:container-home}}/.config/cistella'
-mode = 'rw'
-
-# Git identity and ssh config, read-only as a temporary measure (same
-# rationale as the opencode seat; revisit with cistella:todos/13).
 [[mounts]]
 host-source = '~/.gitconfig'
 container-target = '{{core:container-home}}/.gitconfig'
-mode = 'ro'
-
-[[mounts]]
-host-source = '~/.ssh'
-container-target = '{{core:container-home}}/.ssh'
-mode = 'ro'
-
-[[mounts]]
-host-source = '~/.config/cistella/in-container/gh'
-container-target = '{{core:container-home}}/.config/gh'
 mode = 'ro'
 
 [[mounts]]
@@ -91,21 +122,21 @@ host-source = '~/.nbrc'
 container-target = '{{core:container-home}}/.nbrc'
 mode = 'ro'
 
-# Whole-tree ~/src RW (nesting-relaxation, 0.1.0): strict nesting stacks
-# in any mode combination, so pair-form worktrees beneath this ancestor
-# validate. Revisit only if the overlap rule tightens again.
+[[mounts]]
+host-source = '~/.ssh'
+container-target = '{{core:container-home}}/.ssh'
+mode = 'ro'
+
+## Collections
+
 [[mounts]]
 host-source = '~/src'
 container-target = '{{core:container-home}}/src'
-mode = 'rw'
+mode = 'ro'
 
+# TODO(temporary): understand exactly what nb writes at the root and
+# re-split into RO parent + RW project triple once known.
 [[mounts]]
 host-source = '~/Dropbox/Notes'
 container-target = '{{core:container-home}}/Dropbox/Notes'
-mode = 'rw'
-
-# Local git remote (origin) for this repo only, RW by necessity.
-[[mounts]]
-host-source = '~/Dropbox/Repositories/git/cistella'
-container-target = '{{core:container-home}}/Dropbox/Repositories/git/cistella'
 mode = 'rw'
