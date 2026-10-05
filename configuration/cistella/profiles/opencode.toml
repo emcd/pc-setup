@@ -9,20 +9,21 @@ command = ['opencode']
 
 [environment]
 AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
-# Container-owned cargo home (host ~/.cache/cistella/cargo): registry
+# Container-owned cargo home (host ~/.cache/cistella/in-container/cargo): registry
 # churn and credentials stay out of the host toolchain.
 CARGO_HOME = '{{core:container-home}}/.cargo'
 EDITOR = 'nano'
 # Read-only GitHub CLI config (fine-grained PAT, repo-scoped read-only);
-# empty until the operator hydrates it. Never ~/.config/gh (that would
-# shadow the operator OAuth state).
-GH_CONFIG_DIR = '{{core:container-home}}/.config/cistella/auxiliary/gh'
+# empty until the operator hydrates it. Host state lives under
+# ~/.config/cistella/in-container/gh, never human ~/.config/gh (that
+# would shadow the operator OAuth state).
+GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
 PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 # Plain `tmux` attaches to the host infrastructure-bundle server.
 TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
 
 [[mounts]]
-host-source = '~/.cache/cistella/cargo'
+host-source = '~/.cache/cistella/in-container/cargo'
 container-target = '{{core:container-home}}/.cargo'
 mode = 'rw'
 
@@ -86,8 +87,8 @@ container-target = '{{core:container-home}}/.nbrc'
 mode = 'ro'
 
 [[mounts]]
-host-source = '~/.config/cistella/auxiliary/gh'
-container-target = '{{core:container-home}}/.config/cistella/auxiliary/gh'
+host-source = '~/.config/cistella/in-container/gh'
+container-target = '{{core:container-home}}/.config/gh'
 mode = 'ro'
 
 # Source tree and notebooks collection, read-only for cross-project

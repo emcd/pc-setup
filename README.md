@@ -37,21 +37,23 @@ Ubuntu uses AppArmor; do not apply SELinux-specific `:z` or `:Z` volume labels.
 The Cistella project owns container driver profiles and transport validation.
 
 Cistella fail-closes when a profile `host-source` is missing. Until Cistella
-grows an opt-in create flag, PC Setup pre-creates those directories. Cache
-dirs under `~/.cache/cistella/` are user-owned, persist across reboots, and
-are not backed up. First directory: `~/.cache/cistella/cargo`. Seat GitHub
-CLI config: `~/.config/cistella/auxiliary/gh` (`0700`, not human
-`~/.config/gh`). Do not copy that directory into git. After
+grows an opt-in create flag, PC Setup pre-creates those directories.
+Container-owned state follows the in-container taxonomy: host
+`<type>/cistella/in-container/<app>` maps to guest `<type>/<app>`, so seat
+state never shadows same-named host state. The dirs are user-owned, persist
+across reboots, and are not backed up. Seat GitHub CLI config:
+`~/.config/cistella/in-container/gh` (`0700`, not human `~/.config/gh`).
+Do not copy that directory into git. After
 `provision-cistella-mount-sources`, hydrate the PAT interactively from
 the password database:
 
 ```bash
-GH_CONFIG_DIR="${HOME}/.config/cistella/auxiliary/gh" \
+GH_CONFIG_DIR="${HOME}/.config/cistella/in-container/gh" \
   gh auth login --hostname github.com --git-protocol ssh \
   --skip-ssh-key --insecure-storage --with-token
 ```
 
-Then `chmod 600 "${HOME}/.config/cistella/auxiliary/gh/hosts.yml"`.
+Then `chmod 600 "${HOME}/.config/cistella/in-container/gh/hosts.yml"`.
 
 ## Terminal Fonts
 

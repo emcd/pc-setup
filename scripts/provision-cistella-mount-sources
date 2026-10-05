@@ -4,12 +4,7 @@ set -eu -o pipefail
 
 cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
 config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
-cistella_cache="${cache_home}/cistella"
-cargo_home="${cistella_cache}/cargo"
-emcd_agents_home="${cistella_cache}/emcd-agents"
-uv_home="${cistella_cache}/uv"
-gh_auxiliary="${config_home}/cistella/auxiliary"
-gh_config="${gh_auxiliary}/gh"
+data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
 user_name="$( id --user --name )"
 
 provision_directory() {
@@ -25,9 +20,15 @@ provision_directory() {
     echo "provisioned ${path}"
 }
 
-provision_directory "${cistella_cache}"
-provision_directory "${cargo_home}"
-provision_directory "${emcd_agents_home}"
-provision_directory "${uv_home}"
-provision_directory "${gh_auxiliary}"
-provision_directory "${gh_config}"
+# Container-owned state, in-container taxonomy: host
+# <type>/cistella/in-container/<app> maps to guest <type>/<app>, so seat
+# state never shadows same-named host state. Shared host mounts (rustup,
+# gitconfig, ssh, opencode and agentmux state) pre-exist outside this tree.
+provision_directory "${cache_home}/cistella/in-container/__ROOT__"
+provision_directory "${cache_home}/cistella/in-container/cargo"
+provision_directory "${cache_home}/cistella/in-container/npm"
+provision_directory "${data_home}/cistella/in-container/uv"
+provision_directory "${data_home}/cistella/in-container/emcd-agents"
+provision_directory "${data_home}/cistella/in-container/opentui"
+provision_directory "${config_home}/cistella/in-container/emcd-agents"
+provision_directory "${config_home}/cistella/in-container/gh"
