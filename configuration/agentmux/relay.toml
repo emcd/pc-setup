@@ -57,5 +57,5 @@
 
 [[peers]]
 alias = 'rnd-main'
-address = '/home/me/src/agentmux/.auxiliary/state/agentmux/relay.sock'
+address = '/home/me/.local/state/agentmux-rnd/relay.sock'
 connect-as = 'production'
