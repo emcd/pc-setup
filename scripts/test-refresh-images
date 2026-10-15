@@ -100,7 +100,10 @@ print(json.dumps([{"tag_name": t, "prerelease": False, "draft": False,
         echo '{"token": "stub-token"}'
         ;;
     *registry-1.docker.io/v2/*)
-        [[ -n "${dump}" ]] && printf 'docker-content-digest: %s\r\n' "$(repo_digest)" > "${dump}"
+        if [[ -n "${dump}" ]]; then
+            printf 'docker-content-digest: %s\r\n' "$(repo_digest)" > "${dump}"
+            printf 'content-type: application/vnd.oci.image.index.v1+json\r\n' >> "${dump}"
+        fi
         ;;
     *releases/download*)
         [[ -n "${out}" ]] || fail_exit 26
@@ -111,18 +114,21 @@ esac
 STUB
 chmod +x "${stubbin}/curl"
 
-# Stub podman: state dir via $PODMAN_STATE (tags, labels, buildlog, taglog,
-# buildcount, fail_build_n). `pull` is forbidden: refresh must not pull.
+# Stub podman: state dir via $PODMAN_STATE. Tags are references to image
+# IDs (ids: TAG=ID); per-image labels live in imglabels (ID=label). This
+# models real `podman tag` (new name, same image) versus `build` (new
+# image). `pull` is forbidden: refresh must not pull.
 cat > "${stubbin}/podman" <<'STUB'
 #!/usr/bin/env bash
 st="${PODMAN_STATE:?}"
 cmd="$1"; shift
+tag_id() { grep -E "^$1=" "${st}/ids" 2>/dev/null | cut -d= -f2-; }
 case "${cmd}" in
     pull) echo "stub: pull forbidden" >&2; exit 3 ;;
     image)
         sub="$1"; shift
         case "${sub}" in
-            exists) grep -qx "$1" "${st}/tags" ;;
+            exists) [[ -n "$(tag_id "$1")" ]] ;;
             inspect)
                 fmt=""; tag=""
                 prev=""
@@ -130,11 +136,13 @@ case "${cmd}" in
                     [[ "${prev}" == "--format" ]] && fmt="${a}"
                     prev="${a}"
                 done
-                for a in "$@"; do :; done
                 tag="${*: -1}"
-                name="$(printf '%s' "${tag}" | sed -E 's#^cistella/([^:]+):.*#\1#')"
                 case "${fmt}" in
-                    *Labels*) grep -E "^${name}=" "${st}/labels" 2>/dev/null | cut -d= -f2- || true ;;
+                    *Labels*)
+                        id="$(tag_id "${tag}")"
+                        [[ -n "${id}" ]] || exit 1
+                        grep -E "^${id}=" "${st}/imglabels" 2>/dev/null | cut -d= -f2-
+                        ;;
                     *) echo "" ;;
                 esac
                 ;;
@@ -142,9 +150,12 @@ case "${cmd}" in
         ;;
     tag)
         src="$1"; dst="$2"
-        grep -qx "${src}" "${st}/tags" || exit 1
-        grep -qx "${dst}" "${st}/tags" || echo "${dst}" >> "${st}/tags"
-        echo "${src} -> ${dst}" >> "${st}/taglog"
+        id="$(tag_id "${src}")"
+        [[ -n "${id}" ]] || exit 1
+        grep -vE "^${dst}=" "${st}/ids" 2>/dev/null > "${st}/ids.tmp" || true
+        mv "${st}/ids.tmp" "${st}/ids"
+        echo "${dst}=${id}" >> "${st}/ids"
+        echo "${src} -> ${dst} (${id})" >> "${st}/taglog"
         ;;
     build)
         tag=""; label=""
@@ -160,13 +171,18 @@ case "${cmd}" in
             && [[ "${n}" == "$(cat "${st}/fail_build_n")" ]]; then
             exit 1
         fi
-        name="$(printf '%s' "${tag}" | sed -E 's#^cistella/([^:]+):.*#\1#')"
-        grep -qx "${tag}" "${st}/tags" || echo "${tag}" >> "${st}/tags"
-        grep -vE "^${name}=" "${st}/labels" 2>/dev/null > "${st}/labels.tmp" || true
-        mv "${st}/labels.tmp" "${st}/labels"
-        echo "${name}=${label}" >> "${st}/labels"
+        c="$(cat "${st}/idcounter")"; c=$((c + 1)); echo "${c}" > "${st}/idcounter"
+        id="img${c}"
+        grep -vE "^${tag}=" "${st}/ids" 2>/dev/null > "${st}/ids.tmp" || true
+        mv "${st}/ids.tmp" "${st}/ids"
+        echo "${tag}=${id}" >> "${st}/ids"
+        echo "${id}=${label}" >> "${st}/imglabels"
         ;;
     run)
+        echo "run $*" >> "${st}/runlog"
+        if [[ -e "${st}/fail_run" ]]; then
+            exit 1
+        fi
         printf 'tmux %s\ngh version %s\nopencode %s\ncodex %s\n' \
             "${STUB_TMUX_V:-3.4}" "${STUB_GH_V:-2.101.0}" \
             "${STUB_OC_V:-1.19.0}" "${STUB_CODEX_V:-0.162.1}"
@@ -184,27 +200,35 @@ new_case() {
     rm -rf "${case_root}"
     cp -r "${skeleton}" "${case_root}"
     mkdir -p "${case_root}/state"
-    : > "${case_root}/state/tags"
-    : > "${case_root}/state/labels"
+    : > "${case_root}/state/ids"
+    : > "${case_root}/state/imglabels"
     : > "${case_root}/state/buildlog"
     : > "${case_root}/state/taglog"
+    : > "${case_root}/state/runlog"
     echo 0 > "${case_root}/state/buildcount"
+    echo 0 > "${case_root}/state/idcounter"
     printf '%s' "${case_root}"
 }
 
-seed_tags_labels() {
-    # $1 fixture root; tags :local present, labels match live pins (=fresh).
-    local root="$1" name h
+seed_images() {
+    # $1 fixture root; :local tags present with labels matching live pins.
+    local root="$1" name h id
     for name in base opencode codex; do
-        echo "cistella/${name}:local" >> "${root}/state/tags"
+        id="img-${name}-0"
+        echo "cistella/${name}:local=${id}" >> "${root}/state/ids"
     done
     h="$(sha256sum "${root}/images/cistella/base/pins.sh" | cut -d' ' -f1)"
-    echo "base=${h}" >> "${root}/state/labels"
+    echo "img-base-0=${h}" >> "${root}/state/imglabels"
     for name in opencode codex; do
         h="$(cat "${root}/images/cistella/base/pins.sh" \
             "${root}/images/cistella/$name/pins.sh" | sha256sum | cut -d' ' -f1)"
-        echo "${name}=${h}" >> "${root}/state/labels"
+        echo "img-${name}-0=${h}" >> "${root}/state/imglabels"
     done
+}
+
+local_id() {
+    # $1 fixture root, $2 tag -> image id (empty if absent).
+    grep -E "^$2=" "$1/state/ids" 2>/dev/null | cut -d= -f2-
 }
 
 run_refresh() {
@@ -253,14 +277,14 @@ current_versions_env() {
 
 # 1. check clean -> 0
 r="$(new_case clean)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 code="$(run_refresh "${r}" check)"
 [[ "${code}" == "0" ]] && report ok "check-clean" || report fail "check-clean" "exit=${code}"
 
 # 2. check drift -> 1, pins untouched
 r="$(new_case drift)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 before="$(pins_sha "${r}")"
 code="0"
@@ -278,7 +302,7 @@ fi
 # 3-6. operational failures -> 2 (curl fail, malformed, empty codex, registry)
 for mode in http-fail malformed empty-codex registry-fail; do
     r="$(new_case "err-${mode}")"
-    seed_tags_labels "${r}"
+    seed_images "${r}"
     current_versions_env "${r}"
     code="0"
     CURL_MODE="${mode}" \
@@ -291,63 +315,114 @@ done
 
 # 7. late discovery failure in apply -> 2, pins byte-identical, tags unchanged
 r="$(new_case late-fail)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 before_pins="$(pins_sha "${r}")"
-before_tags="$(sort "${r}/state/tags" | sha256sum)"
+before_tags="$(sort "${r}/state/ids" | sha256sum)"
 code="0"
 CURL_MODE="late-codex-fail" STUB_OC_TAG="v9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 after_pins="$(pins_sha "${r}")"
-after_tags="$(sort "${r}/state/tags" | sha256sum)"
+after_tags="$(sort "${r}/state/ids" | sha256sum)"
 if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${before_tags}" == "${after_tags}" ]]; then
     report ok "apply-late-discovery-fail"
 else
     report fail "apply-late-discovery-fail" "exit=${code}"
 fi
 
-# 8. build failure -> 2, pins + :local tags restored exactly (:previous
-#    created by preserve legitimately persists for rollback)
+# 8. late build failure -> 2, exact pre-run :local IDs + pin bytes restored.
+#    Drift on both harnesses; harness builds reuse base without retagging
+#    it, so build 1 = opencode (succeeds, retags), build 2 = codex (fails).
 r="$(new_case build-fail)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 before_pins="$(pins_sha "${r}")"
-before_tags="$(grep ':local$' "${r}/state/tags" | sort | sha256sum)"
-echo 1 > "${r}/state/fail_build_n"
+before_base_id="$(local_id "${r}" 'cistella/base:local')"
+before_oc_id="$(local_id "${r}" 'cistella/opencode:local')"
+before_codex_id="$(local_id "${r}" 'cistella/codex:local')"
+echo 2 > "${r}/state/fail_build_n"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
-    STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
+CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 after_pins="$(pins_sha "${r}")"
-after_tags="$(grep ':local$' "${r}/state/tags" | sort | sha256sum)"
 : > "${r}/state/fail_build_n"
-if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${before_tags}" == "${after_tags}" ]]; then
-    report ok "apply-build-fail-restores"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" \
+    && "$(local_id "${r}" 'cistella/base:local')" == "${before_base_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:local')" == "${before_oc_id}" \
+    && "$(local_id "${r}" 'cistella/codex:local')" == "${before_codex_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:previous')" == "${before_oc_id}" \
+    && -z "$(local_id "${r}" 'cistella/base:previous')" ]]; then
+    report ok "apply-late-build-fail-restores-ids"
 else
-    report fail "apply-build-fail-restores" "exit=${code}"
+    report fail "apply-late-build-fail-restores-ids" "exit=${code}"
 fi
 
-# 9. retry after build failure converges -> 0, labels fresh
+# 8b. validation failure after successful retags -> 2, IDs + pins restored.
+touch "${r}/state/fail_run"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
-    STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
+CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
-builds="$(grep -c '^build ' "${r}/state/buildlog")"
-if [[ "${code}" == "0" && "${builds}" -ge 1 ]]; then
-    report ok "apply-retry-converges"
+rm -f "${r}/state/fail_run"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" \
+    && "$(local_id "${r}" 'cistella/base:local')" == "${before_base_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:local')" == "${before_oc_id}" \
+    && "$(local_id "${r}" 'cistella/codex:local')" == "${before_codex_id}" ]]; then
+    report ok "apply-validate-fail-restores-ids"
 else
-    report fail "apply-retry-converges" "exit=${code} builds=${builds}"
+    report fail "apply-validate-fail-restores-ids" "exit=${code}"
+fi
+
+# 9. retry converges -> 0 with labels matching pins; second apply is a
+#    no-build no-op.
+: > "${r}/state/fail_build_n"
+code="0"
+CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+ok_labels=1
+for name in base opencode codex; do
+    id="$(local_id "${r}" "cistella/${name}:local")"
+    want=""
+    case "${name}" in
+        base) want="$(sha256sum "${r}/images/cistella/base/pins.sh" | cut -d' ' -f1)" ;;
+        opencode) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/opencode/pins.sh" | sha256sum | cut -d' ' -f1)" ;;
+        codex) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/codex/pins.sh" | sha256sum | cut -d' ' -f1)" ;;
+    esac
+    got="$(grep -E "^${id}=" "${r}/state/imglabels" | cut -d= -f2-)"
+    [[ "${got}" == "${want}" ]] || ok_labels=0
+done
+builds_before="$(grep -c '^build ' "${r}/state/buildlog")"
+code2="0"
+CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+builds_after="$(grep -c '^build ' "${r}/state/buildlog")"
+if [[ "${code}" == "0" && "${ok_labels}" == "1" && "${code2}" == "0" && "${builds_after}" == "${builds_before}" ]]; then
+    report ok "apply-retry-converges-then-noop"
+else
+    report fail "apply-retry-converges-then-noop" "exit=${code}/${code2} builds=${builds_before}/${builds_after}"
 fi
 
 # 10. apply after rollback rebuilds (labels stale, pins already desired)
 r="$(new_case apply-after-rollback)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 sed -i -E 's/^OPENCODE_VERSION=.*/OPENCODE_VERSION=9.99.0/' \
     "${r}/images/cistella/opencode/pins.sh"
@@ -358,7 +433,8 @@ CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
-if [[ "${code}" == "0" ]] && grep -q "build cistella/opencode:local" "${r}/state/buildlog"; then
+if [[ "${code}" == "0" ]] && grep -q "build cistella/opencode:local" "${r}/state/buildlog" \
+    && [[ "$(local_id "${r}" 'cistella/opencode:local')" != "img-opencode-0" ]]; then
     report ok "apply-after-rollback-rebuilds"
 else
     report fail "apply-after-rollback-rebuilds" "exit=${code}"
@@ -366,7 +442,7 @@ fi
 
 # 11. lock contention: mutator refused while lock held
 r="$(new_case lock)"
-seed_tags_labels "${r}"
+seed_images "${r}"
 current_versions_env "${r}"
 before_pins="$(pins_sha "${r}")"
 flock -x "${r}/pc-setup-refresh-images.lock" sleep 4 &
@@ -388,30 +464,109 @@ fi
 
 # 12. rollback preflight: missing :previous -> no tags changed
 r="$(new_case rollback-preflight)"
-printf 'cistella/base:previous\ncistella/base:local\ncistella/opencode:local\ncistella/codex:local\n' > "${r}/state/tags"
-before_tags="$(sort "${r}/state/tags" | sha256sum)"
+printf 'cistella/base:previous=img-base-old\ncistella/base:local=img-base-new\ncistella/opencode:local=img-oc-new\ncistella/codex:local=img-codex-new\n' > "${r}/state/ids"
+printf 'img-base-old=h0\nimg-base-new=h1\nimg-oc-new=h2\nimg-codex-new=h3\n' > "${r}/state/imglabels"
+before_tags="$(sort "${r}/state/ids" | sha256sum)"
 code="0"
 PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --rollback \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
-after_tags="$(sort "${r}/state/tags" | sha256sum)"
+after_tags="$(sort "${r}/state/ids" | sha256sum)"
 if [[ "${code}" == "2" && "${before_tags}" == "${after_tags}" ]]; then
     report ok "rollback-preflight-atomic"
 else
     report fail "rollback-preflight-atomic" "exit=${code}"
 fi
 
-# 13. rollback single target restores its tag
+# 13. rollback single target restores exact image identity
 r="$(new_case rollback-one)"
-printf 'cistella/base:previous\ncistella/base:local\ncistella/opencode:local\ncistella/codex:local\n' > "${r}/state/tags"
+printf 'cistella/base:previous=img-base-old\ncistella/base:local=img-base-new\ncistella/opencode:local=img-oc-new\ncistella/codex:local=img-codex-new\n' > "${r}/state/ids"
+printf 'img-base-old=h0\nimg-base-new=h1\nimg-oc-new=h2\nimg-codex-new=h3\n' > "${r}/state/imglabels"
 code="0"
 PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --rollback base \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
-if [[ "${code}" == "0" ]] && grep -q "cistella/base:previous -> cistella/base:local" "${r}/state/taglog"; then
-    report ok "rollback-single-target"
+if [[ "${code}" == "0" ]] \
+    && [[ "$(local_id "${r}" 'cistella/base:local')" == "img-base-old" ]] \
+    && [[ "$(local_id "${r}" 'cistella/opencode:local')" == "img-oc-new" ]]; then
+    report ok "rollback-single-target-identity"
 else
-    report fail "rollback-single-target" "exit=${code}"
+    report fail "rollback-single-target-identity" "exit=${code}"
+fi
+
+# 14. check with no upstream drift but missing labels -> 1, read-only:
+#     zero build/tag/run calls, pins and image IDs unchanged.
+r="$(new_case check-stale-missing)"
+seed_images "${r}"
+: > "${r}/state/imglabels"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_ids="$(sort "${r}/state/ids" | sha256sum)"
+code="0"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+after_ids="$(sort "${r}/state/ids" | sha256sum)"
+no_calls=0
+[[ -s "${r}/state/buildlog" || -s "${r}/state/taglog" || -s "${r}/state/runlog" ]] || no_calls=1
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
+    && "${before_ids}" == "${after_ids}" && "${no_calls}" == "1" ]] \
+    && grep -q "stale images" "${r}/stdout"; then
+    report ok "check-stale-missing-readonly"
+else
+    report fail "check-stale-missing-readonly" "exit=${code}"
+fi
+
+# 15. check with mismatched labels -> same read-only guarantees.
+r="$(new_case check-stale-wrong)"
+seed_images "${r}"
+printf 'img-base-0=wrong\nimg-opencode-0=wrong\nimg-codex-0=wrong\n' > "${r}/state/imglabels"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_ids="$(sort "${r}/state/ids" | sha256sum)"
+code="0"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+after_ids="$(sort "${r}/state/ids" | sha256sum)"
+no_calls=0
+[[ -s "${r}/state/buildlog" || -s "${r}/state/taglog" || -s "${r}/state/runlog" ]] || no_calls=1
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
+    && "${before_ids}" == "${after_ids}" && "${no_calls}" == "1" ]]; then
+    report ok "check-stale-wrong-readonly"
+else
+    report fail "check-stale-wrong-readonly" "exit=${code}"
+fi
+
+# 16. concurrent checks: both complete, neither mutates.
+r="$(new_case check-concurrent)"
+seed_images "${r}"
+: > "${r}/state/imglabels"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_ids="$(sort "${r}/state/ids" | sha256sum)"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout-a" 2>"${r}/stderr-a" &
+pid_a=$!
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout-b" 2>"${r}/stderr-b" &
+pid_b=$!
+code_a="0"; wait "${pid_a}" || code_a="$?"
+code_b="0"; wait "${pid_b}" || code_b="$?"
+after_pins="$(pins_sha "${r}")"
+after_ids="$(sort "${r}/state/ids" | sha256sum)"
+no_calls=0
+[[ -s "${r}/state/buildlog" || -s "${r}/state/taglog" || -s "${r}/state/runlog" ]] || no_calls=1
+if [[ "${code_a}" == "1" && "${code_b}" == "1" \
+    && "${before_pins}" == "${after_pins}" \
+    && "${before_ids}" == "${after_ids}" && "${no_calls}" == "1" ]]; then
+    report ok "check-concurrent-readonly"
+else
+    report fail "check-concurrent-readonly" "exit=${code_a}/${code_b}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

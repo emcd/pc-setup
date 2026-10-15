@@ -25,9 +25,12 @@ Configuration and maintenance workspace for PC installations.
 auto-tracked pins are OpenCode/Codex GitHub releases plus the Debian/Rust
 base digests (remote manifest lookup; nothing is pulled to check).
 
-- `refresh-images check` — report drift. Exit `0` clean, `1` drift found,
-  `2` operational error (network, parse, registry, lock refusal). `1` is
-  reserved for a completed check; failures never masquerade as drift.
+- `refresh-images check` — report drift. Exit `0` clean and converged,
+  `1` completed check that found work to do (upstream drift, stale images,
+  or both), `2` operational error (network, parse, registry, lock refusal).
+  `1` is reserved for completed checks; failures never masquerade as drift.
+  Check is strictly read-only: it never writes pins, tags, builds, or runs,
+  even when images are stale — that is what `--apply` is for.
 - `refresh-images --apply` — snapshot pins, bump them, preserve `:previous`
   tags, rebuild stale images `--no-cache` (base, then harnesses), validate
   each. Staleness comes from a `pc-setup.refresh-pins` label stamped at

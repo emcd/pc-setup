@@ -29,8 +29,9 @@
 #   refresh-images --rollback [target]  # restore :previous over :local
 #
 # Exit contract (timer-friendly, non-interactive):
-#   0  completed, nothing to do (check clean, apply converged no-op)
-#   1  completed check that found drift (check mode only)
+#   0  completed, nothing to do (check clean and converged, apply no-op)
+#   1  completed check that found work to do: upstream drift, stale
+#      images, or both (check mode only)
 #   2  operational error, usage error, lock refusal, or apply/rollback
 #      failure. Never used for drift.
 
@@ -148,7 +149,15 @@ registry_digest() {
         || return 1
     digest="$(grep -i '^docker-content-digest:' "${header_file}" | awk '{print $2}' | tr -d '\r')" \
         || return 1
-    [[ "${digest}" =~ ^sha256:[0-9a-f]+$ ]] || return 1
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    # Refuse platform manifests: the pin must stay a multi-arch index digest.
+    ctype="$(grep -i '^content-type:' "${header_file}" | awk '{print $2}' | tr -d '\r' | cut -d';' -f1)" \
+        || return 1
+    case "${ctype}" in
+        application/vnd.oci.image.index.v1+json|application/vnd.docker.distribution.manifest.list.v2+json)
+            ;;
+        *) return 1 ;;
+    esac
     printf -v "${_outvar}" '%s' "${digest}"
 }
 
@@ -181,13 +190,13 @@ else
 fi
 
 snapdir="${workdir}/snap"
-mkdir -p "${snapdir}"
-cp "${base_pins}" "${snapdir}/base-pins.sh"
-cp "${opencode_pins}" "${snapdir}/opencode-pins.sh"
-cp "${codex_pins}" "${snapdir}/codex-pins.sh"
+mkdir -p "${snapdir}" || die2 "cannot create snapshot dir"
 snap_base="${snapdir}/base-pins.sh"
 snap_opencode="${snapdir}/opencode-pins.sh"
 snap_codex="${snapdir}/codex-pins.sh"
+cp "${base_pins}" "${snap_base}" || die2 "cannot snapshot base pins"
+cp "${opencode_pins}" "${snap_opencode}" || die2 "cannot snapshot opencode pins"
+cp "${codex_pins}" "${snap_codex}" || die2 "cannot snapshot codex pins"
 
 # --- discovery (read-only; snapshot + network only, no live mutation) -------
 desired="${workdir}/desired.tsv"
@@ -351,18 +360,33 @@ compute_stale() {
     done
 }
 
-if [[ -z "${drift}" ]]; then
-    compute_stale
-    if [[ -z "${stale_images}" ]]; then
-        echo "images up to date"
-        exit 0
+compute_stale
+
+# Unconditional check-mode boundary: check never proceeds past this point,
+# so no pin write, tag, build, or validation can run under a shared lock.
+# Exit 1 means "apply would do work": upstream drift, stale images, or both.
+if [[ "${mode}" == "check" ]]; then
+    if [[ -n "${drift}" ]]; then
+        printf 'drift detected:\n%s' "${drift}"
     fi
-    echo "pins/images out of sync for:${stale_images} (reconciling without upstream drift)"
-else
-    printf 'drift detected:\n%s' "${drift}"
-    if [[ "${mode}" == "check" ]]; then
+    if [[ -n "${stale_images}" ]]; then
+        printf 'stale images (pins/images out of sync):%s\n' "${stale_images}"
+    fi
+    if [[ -n "${drift}" || -n "${stale_images}" ]]; then
         exit 1
     fi
+    echo "images up to date"
+    exit 0
+fi
+
+# --- apply-only below this line (exclusive lock held) -------------------------
+if [[ -n "${drift}" ]]; then
+    printf 'drift detected:\n%s' "${drift}"
+elif [[ -z "${stale_images}" ]]; then
+    echo "images up to date"
+    exit 0
+else
+    echo "pins/images out of sync for:${stale_images} (reconciling without upstream drift)"
 fi
 
 # --- apply ------------------------------------------------------------------
@@ -401,14 +425,19 @@ for name in ${stale_images}; do
 done
 
 rebuild_one() {
-    local name="$1"
-    "${repository_root}/scripts/build-image" --no-cache \
+    local name="$1" skip=()
+    if [[ "${name}" != "base" ]]; then
+        # Base is rebuilt explicitly above when stale; harness builds must
+        # reuse that tag without rebuilding or retagging base themselves,
+        # so checkpoint/restore covers exactly the stale set.
+        skip=(--skip-base)
+    fi
+    "${repository_root}/scripts/build-image" --no-cache "${skip[@]}" \
         --label "pc-setup.refresh-pins=$(pins_hash "${name}")" "${name}"
     "${repository_root}/scripts/validate-image" "${name}"
 }
 
-# Base first so harnesses copy the fresh base; each harness rebuild
-# re-stamps base from cache with the same base hash (cheap, same value).
+# Base first so harnesses copy the fresh base tag.
 for name in ${stale_images}; do
     case "${name}" in
         base) rebuild_one base ;;

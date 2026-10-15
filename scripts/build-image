@@ -6,10 +6,12 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target="opencode"
 no_cache=()
 extra_labels=()
+skip_base=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-cache) no_cache+=(--no-cache); shift ;;
+        --skip-base) skip_base=1; shift ;;
         --label)
             [[ $# -ge 2 ]] || { echo "error: --label needs KEY=VALUE" >&2; exit 1; }
             extra_labels+=(--label "$2"); shift 2 ;;
@@ -60,11 +62,17 @@ build_one() {
 }
 
 if [[ "${target}" == "base" ]]; then
-    build_one base "${no_cache[@]}"
+    build_one base "${no_cache[@]}" "${extra_labels[@]}"
     exit 0
 fi
 
-build_one base
+# The implicit base rebuild keeps standalone harness builds fresh. Callers
+# that manage base themselves (refresh-images builds it explicitly first
+# when stale) pass --skip-base so base:local is never rebuilt or retagged
+# as a side effect; the harness then builds FROM the selected base tag.
+if [[ "${skip_base}" == "0" ]]; then
+    build_one base
+fi
 # shellcheck disable=SC1091
 . "${repository_root}/images/cistella/base/pins.sh"
 build_one "${target}" "${no_cache[@]}" "${extra_labels[@]}" --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
