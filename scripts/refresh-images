@@ -4,25 +4,44 @@
 #
 # Policy (todos/images/1): detect upstream drift for the auto-tracked pins
 # (OpenCode/Codex releases on GitHub, Debian/Rust base digests), then on
-# --apply: preserve :previous tags, bump pins, rebuild with --no-cache in
-# base -> harness order, validate, and leave rollout to the operator.
+# --apply: snapshot pins, bump them, preserve :previous tags, rebuild stale
+# images with --no-cache in base -> harness order, validate, and leave
+# rollout to the operator.
+#
+# Convergence model: every image built here carries a
+# pc-setup.refresh-pins label hashing the pins files it was built from.
+# Apply rebuilds whatever image is stale (label missing or mismatched),
+# independent of upstream drift. Retry after a failure, or apply after an
+# explicit rollback, therefore converges instead of exiting "up to date".
+# Build/validate failure restores exact pin bytes plus tags and exits 2.
 #
 # The script never touches seats or user services: after a :local retag,
-# seats must be recreated through the coordinator. Rollback is an instant
-# re-retag from :previous, no rebuild.
+# seats must be recreated through the coordinator. Rollback re-tags images
+# only; pin files are reverted with git, never by this script.
+#
+# Concurrency: check takes a shared lock and reads a pin snapshot; apply
+# and rollback take an exclusive lock from before the snapshot through
+# cleanup. A second mutator is refused, never queued.
 #
 # Usage:
-#   refresh-images check                # report drift, exit 1 if any
-#   refresh-images --apply              # bump pins, rebuild, validate
+#   refresh-images check                # report drift; exit 0 clean
+#   refresh-images --apply              # reconcile pins and images
 #   refresh-images --rollback [target]  # restore :previous over :local
 #
-# Timer-friendly: non-interactive; check exits 0 clean / 1 drift / 2 error.
+# Exit contract (timer-friendly, non-interactive):
+#   0  completed, nothing to do (check clean, apply converged no-op)
+#   1  completed check that found drift (check mode only)
+#   2  operational error, usage error, lock refusal, or apply/rollback
+#      failure. Never used for drift.
 
 set -eu -o pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repository_root="${PC_SETUP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 base_pins="${repository_root}/images/cistella/base/pins.sh"
-workdir="$(mktemp -d)"
+opencode_pins="${repository_root}/images/cistella/opencode/pins.sh"
+codex_pins="${repository_root}/images/cistella/codex/pins.sh"
+lock_file="${XDG_RUNTIME_DIR:-/tmp}/pc-setup-refresh-images.lock"
+workdir="$(mktemp -d)" || { echo "error: mktemp failed" >&2; exit 2; }
 trap 'rm -rf "${workdir}"' EXIT
 
 mode="check"
@@ -48,39 +67,97 @@ for arg in "$@"; do
     esac
 done
 
-github_api() {
-    curl --fail --silent --show-error --max-time 30 \
-        --header "Accept: application/vnd.github+json" "$@"
+die2() {
+    echo "error: $*" >&2
+    exit 2
 }
 
+# curl that normalizes every transport/HTTP failure to exit 2.
+xcurl() {
+    curl --fail --silent --show-error "$@" || die2 "request failed (curl exit $?)"
+}
+
+github_auth_args=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    github_auth_args=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+github_api() {
+    xcurl --max-time 30 \
+        --header "Accept: application/vnd.github+json" \
+        "${github_auth_args[@]}" "$@"
+}
+
+# Lookup helpers assign through an outvar set by the caller and return
+# nonzero on any operational failure. They are always invoked as plain
+# statements (never nested inside another command substitution): set -e
+# does not propagate through nested $(), so every fallible capture has
+# an explicit handler outside its own substitution.
+
 latest_opencode_tag() {
-    github_api "https://api.github.com/repos/anomalyco/opencode/releases/latest" \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])'
+    local _outvar="$1" _json _tag
+    _json="$(github_api "https://api.github.com/repos/anomalyco/opencode/releases/latest")" \
+        || return 1
+    _tag="$(printf '%s' "${_json}" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')" \
+        || return 1
+    [[ "${_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    printf -v "${_outvar}" '%s' "${_tag}"
 }
 
 latest_codex_rust_tag() {
-    github_api "https://api.github.com/repos/openai/codex/releases?per_page=50" \
+    local _outvar="$1" _json _tag
+    _json="$(github_api "https://api.github.com/repos/openai/codex/releases?per_page=100")" \
+        || return 1
+    _tag="$(printf '%s' "${_json}" \
         | python3 -c '
 import json,sys
 rels = [r for r in json.load(sys.stdin)
-        if r["tag_name"].startswith("rust-v") and not r.get("prerelease")]
+        if r.get("tag_name", "").startswith("rust-v") and not r.get("prerelease") and not r.get("draft")]
+if not rels:
+    raise SystemExit("no eligible rust-v releases")
 rels.sort(key=lambda r: r["published_at"], reverse=True)
 print(rels[0]["tag_name"])
-'
+')" || return 1
+    [[ "${_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    printf -v "${_outvar}" '%s' "${_tag}"
 }
 
-# Latest digest for a docker.io tag pin of the form repo:tag@sha256:<old>.
+# Latest multi-arch index digest for a docker.io library ref without
+# digest (e.g. docker.io/library/debian:trixie-slim). Remote manifest
+# lookup only: nothing is pulled into local storage.
 registry_digest() {
-    local ref="$1"  # e.g. docker.io/library/debian:trixie-slim
-    podman pull --quiet "${ref}" >/dev/null
-    podman image inspect --format '{{index .RepoDigests 0}}' "${ref}" \
-        | sed -E 's/.*@(sha256:[0-9a-f]+)$/\1/'
+    local _outvar="$1" ref="$2" repo tag token header_file digest
+    repo="${ref#docker.io/}"
+    [[ "${ref}" == docker.io/library/* ]] || return 1
+    [[ "${repo}" != *"@"* ]] || return 1
+    repo="${repo%:*}"
+    tag="${ref##*:}"
+    repo="${repo#library/}"
+    token="$(xcurl --max-time 30 \
+        "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/${repo}:pull" \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("token"), "no token"; print(d["token"])')" \
+        || return 1
+    [[ -n "${token}" ]] || return 1
+    header_file="${workdir}/manifest-headers"
+    xcurl --max-time 30 --dump-header "${header_file}" --output /dev/null \
+        --header "Authorization: Bearer ${token}" \
+        --header "Accept: application/vnd.oci.image.index.v1+json" \
+        --header "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+        "https://registry-1.docker.io/v2/library/${repo}/manifests/${tag}" \
+        || return 1
+    digest="$(grep -i '^docker-content-digest:' "${header_file}" | awk '{print $2}' | tr -d '\r')" \
+        || return 1
+    [[ "${digest}" =~ ^sha256:[0-9a-f]+$ ]] || return 1
+    printf -v "${_outvar}" '%s' "${digest}"
 }
 
 pin_value() {
-    local file="$1" var="$2"
-    # shellcheck disable=SC1091
-    ( . "${file}" && printf '%s' "${!var}" )
+    local file="$1" var="$2" _outvar="$3" _val
+    # shellcheck disable=SC1090 # pins files are data, path by argument
+    _val="$( ( . "${file}" && printf '%s' "${!var}" ) )" || return 1
+    [[ -n "${_val}" ]] || return 1
+    printf -v "${_outvar}" '%s' "${_val}"
 }
 
 set_pin() {
@@ -89,102 +166,133 @@ set_pin() {
     grep -qE "^${var}=${value}$" "${file}"
 }
 
+# --- lock + snapshot --------------------------------------------------------
+# Check takes shared, mutations take exclusive; nonblocking so timers fail
+# loudly instead of queueing behind a stuck run.
+
+if [[ "${mode}" == "check" ]]; then
+    # shellcheck disable=SC2094
+    exec {lock_fd}>"${lock_file}" || die2 "cannot open lock ${lock_file}"
+    flock -n -s "${lock_fd}" || die2 "refresh lock held; refusing concurrent run"
+else
+    # shellcheck disable=SC2094
+    exec {lock_fd}>"${lock_file}" || die2 "cannot open lock ${lock_file}"
+    flock -n -x "${lock_fd}" || die2 "refresh lock held; refusing concurrent mutation"
+fi
+
+snapdir="${workdir}/snap"
+mkdir -p "${snapdir}"
+cp "${base_pins}" "${snapdir}/base-pins.sh"
+cp "${opencode_pins}" "${snapdir}/opencode-pins.sh"
+cp "${codex_pins}" "${snapdir}/codex-pins.sh"
+snap_base="${snapdir}/base-pins.sh"
+snap_opencode="${snapdir}/opencode-pins.sh"
+snap_codex="${snapdir}/codex-pins.sh"
+
+# --- discovery (read-only; snapshot + network only, no live mutation) -------
+desired="${workdir}/desired.tsv"
+: > "${desired}"
+
+want_pin() {
+    printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "${desired}"
+}
+
 drift=""
 
 note_drift() {
     drift+="${1}"$'\n'
 }
 
-# --- OpenCode ---------------------------------------------------------------
-check_opencode() {
-    local current tag version url_arm url_amd sha_arm sha_amd
-    current="$(pin_value "${repository_root}/images/cistella/opencode/pins.sh" OPENCODE_VERSION)"
-    tag="$(latest_opencode_tag)"
+discover_opencode() {
+    local current tag version url sha
+    pin_value "${snap_opencode}" OPENCODE_VERSION current \
+        || die2 "cannot read OPENCODE_VERSION"
+    latest_opencode_tag tag || die2 "opencode release lookup failed"
     version="${tag#v}"
-    if [[ "${version}" == "${current}" ]]; then
-        return 0
-    fi
-    url_arm="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-arm64.tar.gz"
-    url_amd="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-x64.tar.gz"
-    curl --fail --silent --show-error --max-time 120 --location \
-        --output "${workdir}/opencode-arm64.tar.gz" "${url_arm}"
-    curl --fail --silent --show-error --max-time 120 --location \
-        --output "${workdir}/opencode-amd64.tar.gz" "${url_amd}"
-    sha_arm="$(sha256sum "${workdir}/opencode-arm64.tar.gz" | cut -d' ' -f1)"
-    sha_amd="$(sha256sum "${workdir}/opencode-amd64.tar.gz" | cut -d' ' -f1)"
-    note_drift "opencode OPENCODE_VERSION ${current} -> ${version} (shas ${sha_arm:0:12}.. ${sha_amd:0:12}..)"
-    if [[ "${mode}" == "apply" ]]; then
-        set_pin "${repository_root}/images/cistella/opencode/pins.sh" OPENCODE_VERSION "${version}"
-        set_pin "${repository_root}/images/cistella/opencode/pins.sh" OPENCODE_SHA256_ARM64 "${sha_arm}"
-        set_pin "${repository_root}/images/cistella/opencode/pins.sh" OPENCODE_SHA256_AMD64 "${sha_amd}"
-    fi
+    [[ "${version}" == "${current}" ]] && return 0
+    for plat in arm64 amd64; do
+        if [[ "${plat}" == "arm64" ]]; then
+            url="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-arm64.tar.gz"
+        else
+            url="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-x64.tar.gz"
+        fi
+        xcurl --max-time 120 --location --output "${workdir}/opencode-${plat}.tar.gz" "${url}"
+        sha="$(sha256sum "${workdir}/opencode-${plat}.tar.gz" | cut -d' ' -f1)"
+        [[ "${sha}" =~ ^[0-9a-f]{64}$ ]] || die2 "bad sha for opencode ${plat} tarball"
+        if [[ "${plat}" == "arm64" ]]; then
+            want_pin "${opencode_pins}" OPENCODE_SHA256_ARM64 "${sha}"
+        else
+            want_pin "${opencode_pins}" OPENCODE_SHA256_AMD64 "${sha}"
+        fi
+    done
+    want_pin "${opencode_pins}" OPENCODE_VERSION "${version}"
+    note_drift "opencode OPENCODE_VERSION ${current} -> ${version}"
 }
 
-# --- Codex ------------------------------------------------------------------
-check_codex() {
-    local current tag version url_arm url_amd sha_arm sha_amd
-    current="$(pin_value "${repository_root}/images/cistella/codex/pins.sh" CODEX_VERSION)"
-    tag="$(latest_codex_rust_tag)"
+discover_codex() {
+    local current tag version url sha
+    pin_value "${snap_codex}" CODEX_VERSION current \
+        || die2 "cannot read CODEX_VERSION"
+    latest_codex_rust_tag tag || die2 "codex release lookup failed"
     version="${tag#rust-v}"
-    if [[ "${version}" == "${current}" ]]; then
-        return 0
-    fi
-    url_arm="https://github.com/openai/codex/releases/download/${tag}/codex-aarch64-unknown-linux-musl.tar.gz"
-    url_amd="https://github.com/openai/codex/releases/download/${tag}/codex-x86_64-unknown-linux-musl.tar.gz"
-    curl --fail --silent --show-error --max-time 120 --location \
-        --output "${workdir}/codex-arm64.tar.gz" "${url_arm}"
-    curl --fail --silent --show-error --max-time 120 --location \
-        --output "${workdir}/codex-amd64.tar.gz" "${url_amd}"
-    sha_arm="$(sha256sum "${workdir}/codex-arm64.tar.gz" | cut -d' ' -f1)"
-    sha_amd="$(sha256sum "${workdir}/codex-amd64.tar.gz" | cut -d' ' -f1)"
-    note_drift "codex CODEX_VERSION ${current} -> ${version} (shas ${sha_arm:0:12}.. ${sha_amd:0:12}..)"
-    if [[ "${mode}" == "apply" ]]; then
-        set_pin "${repository_root}/images/cistella/codex/pins.sh" CODEX_VERSION "${version}"
-        set_pin "${repository_root}/images/cistella/codex/pins.sh" CODEX_SHA256_ARM64 "${sha_arm}"
-        set_pin "${repository_root}/images/cistella/codex/pins.sh" CODEX_SHA256_AMD64 "${sha_amd}"
-    fi
+    [[ "${version}" == "${current}" ]] && return 0
+    for plat in arm64 amd64; do
+        if [[ "${plat}" == "arm64" ]]; then
+            url="https://github.com/openai/codex/releases/download/${tag}/codex-aarch64-unknown-linux-musl.tar.gz"
+        else
+            url="https://github.com/openai/codex/releases/download/${tag}/codex-x86_64-unknown-linux-musl.tar.gz"
+        fi
+        xcurl --max-time 120 --location --output "${workdir}/codex-${plat}.tar.gz" "${url}"
+        sha="$(sha256sum "${workdir}/codex-${plat}.tar.gz" | cut -d' ' -f1)"
+        [[ "${sha}" =~ ^[0-9a-f]{64}$ ]] || die2 "bad sha for codex ${plat} tarball"
+        if [[ "${plat}" == "arm64" ]]; then
+            want_pin "${codex_pins}" CODEX_SHA256_ARM64 "${sha}"
+        else
+            want_pin "${codex_pins}" CODEX_SHA256_AMD64 "${sha}"
+        fi
+    done
+    want_pin "${codex_pins}" CODEX_VERSION "${version}"
+    note_drift "codex CODEX_VERSION ${current} -> ${version}"
 }
 
-# --- Base digests -----------------------------------------------------------
-check_digest_pin() {
-    local var="$1"
-    local current full_repo latest
-    current="$(pin_value "${base_pins}" "${var}")"
+discover_digest_pin() {
+    local var="$1" current full_repo latest
+    pin_value "${snap_base}" "${var}" current \
+        || die2 "cannot read ${var}"
     full_repo="${current%@*}"
-    latest="$(registry_digest "${full_repo}")"
-    if [[ "${current}" == "${full_repo}@${latest}" ]]; then
-        return 0
-    fi
+    [[ "${full_repo}" != "${current}" ]] || die2 "${var} is not a digest pin"
+    registry_digest latest "${full_repo}" || die2 "digest lookup failed for ${full_repo}"
+    [[ "${current}" == "${full_repo}@${latest}" ]] && return 0
+    want_pin "${base_pins}" "${var}" "${full_repo}@${latest}"
     note_drift "base ${var} digest drift"
-    if [[ "${mode}" == "apply" ]]; then
-        set_pin "${base_pins}" "${var}" "${full_repo}@${latest}"
-    fi
 }
 
-preserve_previous() {
-    local name="$1"
-    if podman image exists "cistella/${name}:local"; then
-        podman tag "cistella/${name}:local" "cistella/${name}:previous"
-        echo "preserved cistella/${name}:local as :previous"
-    fi
-}
-
+# --- rollback (images only; pins revert with git) ----------------------------
 do_rollback() {
-    local names
+    local names name missing=()
     if [[ -n "${rollback_target}" ]]; then
         names="${rollback_target}"
     else
         names="base opencode codex"
     fi
-    local name
     for name in ${names}; do
-        if ! podman image exists "cistella/${name}:previous"; then
-            echo "error: cistella/${name}:previous does not exist" >&2
-            exit 2
-        fi
-        podman tag "cistella/${name}:previous" "cistella/${name}:local"
-        echo "rolled back cistella/${name}:local to :previous (recreate seats)"
+        podman image exists "cistella/${name}:previous" \
+            || missing+=("${name}")
     done
+    if [[ "${#missing[@]}" -gt 0 ]]; then
+        die2 "missing :previous for: ${missing[*]} (no tags changed)"
+    fi
+    local failed=()
+    for name in ${names}; do
+        if podman tag "cistella/${name}:previous" "cistella/${name}:local"; then
+            echo "rolled back cistella/${name}:local to :previous (recreate seats)"
+        else
+            failed+=("${name}")
+        fi
+    done
+    if [[ "${#failed[@]}" -gt 0 ]]; then
+        die2 "restoration failed for: ${failed[*]}"
+    fi
 }
 
 if [[ "${mode}" == "rollback" ]]; then
@@ -193,49 +301,124 @@ if [[ "${mode}" == "rollback" ]]; then
 fi
 
 for name in base opencode codex; do
-    if ! podman image exists "cistella/${name}:local"; then
-        echo "error: cistella/${name}:local does not exist; build it first" >&2
-        exit 2
-    fi
+    podman image exists "cistella/${name}:local" \
+        || die2 "cistella/${name}:local does not exist; build it first"
 done
 
-check_opencode
-check_codex
-check_digest_pin DEBIAN_IMAGE
-check_digest_pin RUST_IMAGE
+# All four discoveries must complete before any live mutation. Any
+# operational failure exits 2 here with pins byte-identical.
+discover_opencode
+discover_codex
+discover_digest_pin DEBIAN_IMAGE
+discover_digest_pin RUST_IMAGE
 
-if [[ -z "${drift}" ]]; then
-    echo "images up to date"
-    exit 0
-fi
+# --- staleness via build labels ---------------------------------------------
+# An image is stale when its pc-setup.refresh-pins label is missing or
+# differs from the hash of the pins files it builds from. This reconciles
+# pins to images even when upstream shows no drift (retry after failure,
+# apply after rollback, hand-edited pins).
 
-printf 'drift detected:\n%s' "${drift}"
+pins_hash() {
+    case "$1" in
+        base) sha256sum "${base_pins}" | cut -d' ' -f1 ;;
+        opencode) cat "${base_pins}" "${opencode_pins}" | sha256sum | cut -d' ' -f1 ;;
+        codex) cat "${base_pins}" "${codex_pins}" | sha256sum | cut -d' ' -f1 ;;
+    esac
+}
 
-if [[ "${mode}" == "check" ]]; then
-    exit 1
-fi
+image_label() {
+    podman image inspect --format '{{ index .Labels "pc-setup.refresh-pins" }}' \
+        "cistella/$1:local" 2>/dev/null || true
+}
 
-# --- apply ------------------------------------------------------------------
-preserve_previous base
-preserve_previous opencode
-preserve_previous codex
+# Simpler correct approach: apply desired pin rows first (pins are cheap
+# and exactly restorable from snapshot), then hash live files.
+apply_desired_pins() {
+    local file var value
+    while IFS=$'\t' read -r file var value; do
+        [[ -n "${file}" ]] || continue
+        set_pin "${file}" "${var}" "${value}"
+    done < "${desired}"
+}
 
-restore_previous() {
-    echo "refresh failed; restoring :previous over :local" >&2
+compute_stale() {
+    stale_images=""
+    local name
     for name in base opencode codex; do
-        if podman image exists "cistella/${name}:previous"; then
-            podman tag "cistella/${name}:previous" "cistella/${name}:local"
+        if [[ "$(image_label "${name}")" != "$(pins_hash "${name}")" ]]; then
+            stale_images+="${name} "
         fi
     done
 }
-trap 'restore_previous; rm -rf "${workdir}"' EXIT
 
-"${repository_root}/scripts/build-image" --no-cache base
-"${repository_root}/scripts/validate-image" base
-"${repository_root}/scripts/build-image" --no-cache opencode
-"${repository_root}/scripts/validate-image" opencode
-"${repository_root}/scripts/build-image" --no-cache codex
-"${repository_root}/scripts/validate-image" codex
+if [[ -z "${drift}" ]]; then
+    compute_stale
+    if [[ -z "${stale_images}" ]]; then
+        echo "images up to date"
+        exit 0
+    fi
+    echo "pins/images out of sync for:${stale_images} (reconciling without upstream drift)"
+else
+    printf 'drift detected:\n%s' "${drift}"
+    if [[ "${mode}" == "check" ]]; then
+        exit 1
+    fi
+fi
+
+# --- apply ------------------------------------------------------------------
+# From here on every failure restores exact pin bytes plus tags: pins and
+# images always agree afterwards (both new on success, both old on failure).
+
+restore_all() {
+    echo "refresh failed; restoring pins and tags" >&2
+    cp "${snap_base}" "${base_pins}"
+    cp "${snap_opencode}" "${opencode_pins}"
+    cp "${snap_codex}" "${codex_pins}"
+    local name
+    for name in ${preserved:-}; do
+        podman tag "cistella/${name}:previous" "cistella/${name}:local" \
+            || echo "warning: could not restore cistella/${name}:local" >&2
+    done
+}
+trap 'restore_all; rm -rf "${workdir}"; exit 2' EXIT
+
+apply_desired_pins
+compute_stale
+
+if [[ -z "${stale_images}" ]]; then
+    # Drift was cosmetic (e.g. digest text already current after write).
+    trap 'rm -rf "${workdir}"' EXIT
+    echo "pins already match images; nothing rebuilt"
+    exit 0
+fi
+
+preserved=""
+for name in ${stale_images}; do
+    podman tag "cistella/${name}:local" "cistella/${name}:previous" \
+        || die2 "cannot preserve cistella/${name}:previous"
+    preserved+="${name} "
+    echo "preserved cistella/${name}:local as :previous"
+done
+
+rebuild_one() {
+    local name="$1"
+    "${repository_root}/scripts/build-image" --no-cache \
+        --label "pc-setup.refresh-pins=$(pins_hash "${name}")" "${name}"
+    "${repository_root}/scripts/validate-image" "${name}"
+}
+
+# Base first so harnesses copy the fresh base; each harness rebuild
+# re-stamps base from cache with the same base hash (cheap, same value).
+for name in ${stale_images}; do
+    case "${name}" in
+        base) rebuild_one base ;;
+    esac
+done
+for name in ${stale_images}; do
+    case "${name}" in
+        opencode|codex) rebuild_one "${name}" ;;
+    esac
+done
 
 trap 'rm -rf "${workdir}"' EXIT
 
@@ -243,5 +426,6 @@ cat <<'EOF'
 refresh complete. Rollout is manual:
   1. Review pin changes (git diff) and commit.
   2. Recreate seats through the coordinator so they pick up :local.
-  3. If anything misbehaves: refresh-images --rollback [target].
+  3. If anything misbehaves: refresh-images --rollback [target]
+     (rollback re-tags images only; revert pins with git).
 EOF

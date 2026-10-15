@@ -17,10 +17,10 @@ done
 
 image_tag="cistella/${target}:local"
 
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 . "${repository_root}/images/cistella/base/pins.sh"
 if [[ "${target}" != "base" ]]; then
-    # shellcheck disable=SC1091
+    # shellcheck disable=SC1090,SC1091
     . "${repository_root}/images/cistella/${target}/pins.sh"
 fi
 

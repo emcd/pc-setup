@@ -19,6 +19,31 @@ Configuration and maintenance workspace for PC installations.
   harness. Tags: `cistella/base:local`, `cistella/opencode:local`,
   `cistella/codex:local`.
 
+## Image Refresh
+
+`scripts/refresh-images` owns the refresh policy (`todos/images/1`):
+auto-tracked pins are OpenCode/Codex GitHub releases plus the Debian/Rust
+base digests (remote manifest lookup; nothing is pulled to check).
+
+- `refresh-images check` — report drift. Exit `0` clean, `1` drift found,
+  `2` operational error (network, parse, registry, lock refusal). `1` is
+  reserved for a completed check; failures never masquerade as drift.
+- `refresh-images --apply` — snapshot pins, bump them, preserve `:previous`
+  tags, rebuild stale images `--no-cache` (base, then harnesses), validate
+  each. Staleness comes from a `pc-setup.refresh-pins` label stamped at
+  build time, so retry after a failure (or apply after a rollback)
+  converges instead of exiting clean. Any build/validate failure restores
+  exact pin bytes plus tags and exits `2`. Concurrent runs are serialized
+  with a lock file; a second mutator is refused, never queued.
+- `refresh-images --rollback [target]` — re-tag `:previous` over `:local`
+  (images only; revert pins with `git`). Preflights every selected
+  `:previous` before changing any tag.
+
+Rollout is always manual: after `:local` moves, recreate seats through the
+coordinator. `scripts/test-refresh-images` covers the failure paths with
+stubbed `curl`/`podman` (exit contract, pin/tag restoration, retry
+convergence, lock contention, rollback preflight).
+
 The canonical installer is the shared target for global agent CLI installation
 and is intended to avoid duplicated installer logic across repositories.
 
