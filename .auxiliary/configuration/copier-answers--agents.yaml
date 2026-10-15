@@ -1,19 +1,12 @@
 # Changes here will be overwritten by Copier
-_commit: v1.0a11-7-g46a1f11
+_commit: v1.0a15-7-g77ee16f
 _src_path: gh:emcd/agents-common
 coders:
 - claude
 - codex
 - opencode
-instructions_sources:
--   files:
-        '*.rst':
-            strip_header_lines: 20
-    source: github:emcd/python-project-common@docs-1#documentation/common
-instructions_target: .auxiliary/instructions
+instructions_target: .auxiliary/agents/standards
 languages:
 - python
-project_bundle_name: infrastructure
 project_name: pc-setup
-provide_instructions: true
 support_local_models: true

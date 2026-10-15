@@ -7,37 +7,11 @@
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": 1,
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": 1
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/scripts/pre-bash-python-check",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": ".claude/scripts/pre-bash-git-commit-check",
-            "timeout": 300
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|MultiEdit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/scripts/post-edit-linter",
-            "timeout": 60
-          }
-        ]
-      }
-    ]
-  },
+  "enabledMcpjsonServers": [
+    "agentmux",
+    "context7",
+    "nb"
+  ],
   "permissions": {
     "auto_allow": [
       "mcp__agentmux__list",
@@ -51,8 +25,12 @@
       "Bash(hatch --env develop run *)",
       "Bash(awk *)",
       "Bash(cat *)",
+      "Bash(comm *)",
       "Bash(cut *)",
+      "Bash(date)",
+      "Bash(date *)",
       "Bash(df *)",
+      "Bash(diff *)",
       "Bash(du *)",
       "Bash(echo *)",
       "Bash(file *)",
@@ -84,6 +62,8 @@
       "Bash(git ls-files *)",
       "Bash(git ls-tree *)",
       "Bash(git merge-base *)",
+      "Bash(git merge-tree *)",
+      "Bash(git range-diff *)",
       "Bash(git rebase *)",
       "Bash(git restore *)",
       "Bash(git rev-list *)",
@@ -98,16 +78,35 @@
       "Bash(head *)",
       "Bash(ls *)",
       "Bash(mkdir *)",
+      "Bash(nbspec *)",
+      "Bash(nl *)",
+      "Bash(npm run *)",
+      "Bash(od *)",
       "Bash(openspec *)",
+      "Bash(printf)",
+      "Bash(printf *)",
       "Bash(ps *)",
       "Bash(pwd *)",
+      "Bash(readlink *)",
       "Bash(rg *)",
       "Bash(sed *)",
+      "Bash(set)",
+      "Bash(set *)",
+      "Bash(sleep)",
+      "Bash(sleep *)",
       "Bash(sort *)",
+      "Bash(stat)",
+      "Bash(stat *)",
       "Bash(tail *)",
+      "Bash(test *)",
+      "Bash(true)",
+      "Bash(true *)",
+      "Bash(uname)",
+      "Bash(uname *)",
       "Bash(uniq *)",
       "Bash(wc *)",
-      "Bash(which *)"
+      "Bash(which *)",
+      "Bash(xxd *)"
     ]
   },
   "sandbox": {
