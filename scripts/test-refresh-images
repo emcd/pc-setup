@@ -105,6 +105,46 @@ print(json.dumps([{"tag_name": t, "prerelease": False, "draft": False,
             printf 'content-type: application/vnd.oci.image.index.v1+json\r\n' >> "${dump}"
         fi
         ;;
+    *pypi.org/pypi/*)
+        [[ "${mode}" == "pypi-fail" ]] && fail_exit 22
+        dist="$(printf '%s' "${url}" | sed -E 's#.*/pypi/([^/]+)/json#\1#')"
+        key="$(printf '%s' "${dist}" | tr 'a-z-' 'A-Z_')"
+        eval "info=\"\${STUB_PYPI_INFO_${key}:-}\""
+        eval "extras=\"\${STUB_PYPI_EXTRA_${key}:-}\""
+        eval "yanked=\"\${STUB_PYPI_YANKED_${key}:-}\""
+        STUB_PYPI_INFO_VAL="${info}" STUB_PYPI_EXTRA_VAL="${extras}" \
+        STUB_PYPI_YANKED_VAL="${yanked}" python3 -c '
+import json, os
+info = os.environ["STUB_PYPI_INFO_VAL"]
+rels = {info: [{}]}
+for v in os.environ["STUB_PYPI_EXTRA_VAL"].split():
+    rels[v] = [{}]
+for v in os.environ["STUB_PYPI_YANKED_VAL"].split():
+    rels[v] = [{"yanked": True}]
+print(json.dumps({"info": {"version": info}, "releases": rels}))'
+        ;;
+    *crates.io/api/v1/crates/*)
+        [[ "${mode}" == "crate-fail" ]] && fail_exit 22
+        name="${url##*/}"
+        key="$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')"
+        eval "current=\"\${STUB_CRATE_${key}:-}\""
+        eval "new=\"\${STUB_CRATE_NEW_${key}:-}\""
+        eval "yanked=\"\${STUB_CRATE_YANKED_${key}:-}\""
+        eval "pre=\"\${STUB_CRATE_PRE_${key}:-}\""
+        STUB_CRATE_CURRENT="${current}" STUB_CRATE_NEW="${new}" \
+        STUB_CRATE_YANKED_VAL="${yanked}" STUB_CRATE_PRE_VAL="${pre}" python3 -c '
+import json, os
+vs = []
+if os.environ["STUB_CRATE_CURRENT"]:
+    vs.append({"num": os.environ["STUB_CRATE_CURRENT"], "yanked": False})
+if os.environ["STUB_CRATE_NEW"]:
+    vs.append({"num": os.environ["STUB_CRATE_NEW"], "yanked": False})
+for v in os.environ["STUB_CRATE_PRE_VAL"].split():
+    vs.append({"num": v, "yanked": False})
+for v in os.environ["STUB_CRATE_YANKED_VAL"].split():
+    vs.append({"num": v, "yanked": True})
+print(json.dumps({"crate": {"id": "x"}, "versions": vs}))'
+        ;;
     *releases/download*)
         [[ -n "${out}" ]] || fail_exit 26
         printf 'fake-tarball-bytes-for-%s' "${url##*/}" > "${out}"
@@ -271,6 +311,29 @@ current_versions_env() {
     STUB_DEBIAN_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${DEBIAN_IMAGE}" ) | sed -E 's/.*@//')"
     STUB_RUST_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${RUST_IMAGE}" ) | sed -E 's/.*@//')"
     export STUB_OC_TAG STUB_CODEX_TAGS STUB_DEBIAN_DIGEST STUB_RUST_DIGEST
+    local pair dist var key val
+    for pair in "emcd-agents:EMCD_AGENTS_VERSION" "hatch:HATCH_VERSION" "pre-commit:PRE_COMMIT_VERSION" "copier:COPIER_VERSION" "agentmux:AGENTMUX_VERSION" "nbspec:NBSPEC_VERSION" "nb-mcp-server:NB_MCP_VERSION" "linecheck:LINECHECK_VERSION"; do
+        dist="${pair%%:*}"; var="${pair##*:}"
+        key="$(printf '%s' "${dist}" | tr 'a-z-' 'A-Z_')"
+        # shellcheck disable=SC1091
+        val="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${!var}" ) )"
+        case "${dist}" in
+            emcd-agents|hatch|pre-commit|copier)
+                printf -v "STUB_PYPI_INFO_${key}" '%s' "${val}"
+                export "STUB_PYPI_INFO_${key}"
+                ;;
+            *)
+                printf -v "STUB_CRATE_${key}" '%s' "${val}"
+                export "STUB_CRATE_${key}"
+                ;;
+        esac
+    done
+    STUB_PYPI_EXTRA_EMCD_AGENTS=""; export STUB_PYPI_EXTRA_EMCD_AGENTS
+    STUB_PYPI_YANKED_EMCD_AGENTS=""; export STUB_PYPI_YANKED_EMCD_AGENTS
+    STUB_CRATE_NEW_AGENTMUX=""; export STUB_CRATE_NEW_AGENTMUX
+    STUB_CRATE_YANKED_AGENTMUX=""; export STUB_CRATE_YANKED_AGENTMUX
+    STUB_CRATE_NEW_LINECHECK=""; export STUB_CRATE_NEW_LINECHECK
+    STUB_CRATE_PRE_LINECHECK=""; export STUB_CRATE_PRE_LINECHECK
 }
 
 # --- cases --------------------------------------------------------------------
@@ -567,6 +630,218 @@ if [[ "${code_a}" == "1" && "${code_b}" == "1" \
     report ok "check-concurrent-readonly"
 else
     report fail "check-concurrent-readonly" "exit=${code_a}/${code_b}"
+fi
+
+# 17. PyPI stable drift (hatch) -> check 1, apply bumps + rebuilds.
+r="$(new_case pypi-drift)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_HATCH="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+code2="0"
+CURL_MODE=ok STUB_PYPI_INFO_HATCH="9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="1.19.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+# shellcheck disable=SC1091
+got_hatch="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${HATCH_VERSION}" ) )"
+if [[ "${code}" == "1" && "${code2}" == "0" && "${got_hatch}" == "9.99.0" ]] \
+    && grep -q '^build ' "${r}/state/buildlog"; then
+    report ok "pypi-stable-drift-applies"
+else
+    report fail "pypi-stable-drift-applies" "exit=${code}/${code2} hatch=${got_hatch}"
+fi
+
+# 18. held pre-commit drift -> check 0 with visible notice, pins frozen,
+#     apply is a no-op.
+r="$(new_case held-drift)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_PRE_COMMIT="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+code2="0"
+CURL_MODE=ok STUB_PYPI_INFO_PRE_COMMIT="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+no_builds=0
+[[ -s "${r}/state/buildlog" ]] || no_builds=1
+if [[ "${code}" == "0" && "${code2}" == "0" \
+    && "${before_pins}" == "${after_pins}" && "${no_builds}" == "1" ]] \
+    && grep -q "held" "${r}/stdout"; then
+    report ok "held-drift-notify-only"
+else
+    report fail "held-drift-notify-only" "exit=${code}/${code2}"
+fi
+
+# 19. emcd-agents prerelease channel: picks max alpha, skips yanked.
+r="$(new_case pypi-prerelease)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_PYPI_EXTRA_EMCD_AGENTS="1.0a16" STUB_PYPI_YANKED_EMCD_AGENTS="1.0a17" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="1.19.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+# shellcheck disable=SC1091
+got_emcd="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${EMCD_AGENTS_VERSION}" ) )"
+if [[ "${code}" == "0" && "${got_emcd}" == "1.0a16" ]]; then
+    report ok "pypi-prerelease-selection"
+else
+    report fail "pypi-prerelease-selection" "exit=${code} emcd=${got_emcd}"
+fi
+
+# 20. crate yanked exclusion: higher yanked version does not disturb clean.
+r="$(new_case crate-yanked)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_CRATE_YANKED_AGENTMUX="9.99.9" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "0" ]] && report ok "crate-yanked-excluded" \
+    || report fail "crate-yanked-excluded" "exit=${code}"
+
+# 21. crate drift (linecheck) -> bumped on apply.
+r="$(new_case crate-drift)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_CRATE_NEW_LINECHECK="9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="1.19.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+# shellcheck disable=SC1091
+got_lc="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${LINECHECK_VERSION}" ) )"
+if [[ "${code}" == "0" && "${got_lc}" == "9.99.0" ]]; then
+    report ok "crate-drift-applies"
+else
+    report fail "crate-drift-applies" "exit=${code} linecheck=${got_lc}"
+fi
+
+# 22-23. PyPI / crates.io transport failures -> 2.
+for mode in pypi-fail crate-fail; do
+    r="$(new_case "err-${mode}")"
+    seed_images "${r}"
+    current_versions_env "${r}"
+    code="0"
+    CURL_MODE="${mode}" \
+        PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+        PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+        >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+    [[ "${code}" == "2" ]] && report ok "check-err-${mode}" \
+        || report fail "check-err-${mode}" "exit=${code}"
+done
+
+# 24. crate numeric prerelease must not beat stable (SemVer, not PEP 440:
+#     1.2.3-1 is a prerelease, not post1).
+r="$(new_case crate-semver-pre)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_CRATE_PRE_LINECHECK="1.2.3-1" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "0" ]] && report ok "crate-semver-pre-ignored" \
+    || report fail "crate-semver-pre-ignored" "exit=${code}"
+
+# 25. arbitrary SemVer prerelease labels ignored without failing.
+r="$(new_case crate-semver-label)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_CRATE_PRE_LINECHECK="1.3.0-nightly.1" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "0" ]] && report ok "crate-semver-label-ignored" \
+    || report fail "crate-semver-label-ignored" "exit=${code}"
+
+# 26. PyPI stable proves eligibility: info version all-yanked with no
+#     other releases -> error 2 (never accepts empty/yanked).
+r="$(new_case pypi-stable-yanked)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_HATCH="9.99.0" STUB_PYPI_YANKED_HATCH="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "2" ]] && report ok "pypi-stable-allyanked-errors" \
+    || report fail "pypi-stable-allyanked-errors" "exit=${code}"
+
+# 27. PyPI stable proves eligibility from releases, never trusts a
+#     lying info.version: info claims prerelease 2.0a1, live 1.0 wins.
+r="$(new_case pypi-stable-newerpre)"
+sed -i -E 's/^HATCH_VERSION=.*/HATCH_VERSION=1.0/' \
+    "${r}/images/cistella/base/pins.sh"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_HATCH="2.0a1" STUB_PYPI_EXTRA_HATCH="1.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "0" ]] && report ok "pypi-stable-ignores-newer-pre" \
+    || report fail "pypi-stable-ignores-newer-pre" "exit=${code}"
+
+# 28. held drift stays visible on the apply path too (stdout2), pin
+#     frozen, no rebuild.
+r="$(new_case held-apply)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_PRE_COMMIT="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+no_builds=0
+[[ -s "${r}/state/buildlog" ]] || no_builds=1
+if [[ "${code}" == "0" && "${before_pins}" == "${after_pins}" \
+    && "${no_builds}" == "1" ]] && grep -q "held" "${r}/stdout"; then
+    report ok "held-visible-on-apply"
+else
+    report fail "held-visible-on-apply" "exit=${code}"
+fi
+
+# 29. mixed held + automatic drift: both visible, auto applied, held
+#     frozen, rebuild caused by auto only.
+r="$(new_case held-mixed)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_PYPI_INFO_PRE_COMMIT="9.99.0" STUB_PYPI_INFO_HATCH="9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="1.19.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+# shellcheck disable=SC1091
+got_pc="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${PRE_COMMIT_VERSION}" ) )"
+# shellcheck disable=SC1091
+got_hatch="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${HATCH_VERSION}" ) )"
+if [[ "${code}" == "0" && "${got_pc}" != "9.99.0" && "${got_hatch}" == "9.99.0" ]] \
+    && grep -q "held" "${r}/stdout" && grep -q "hatch" "${r}/stdout" \
+    && grep -q '^build ' "${r}/state/buildlog"; then
+    report ok "held-mixed-with-auto"
+else
+    report fail "held-mixed-with-auto" "exit=${code} pre-commit=${got_pc} hatch=${got_hatch}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

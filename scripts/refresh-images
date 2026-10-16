@@ -3,10 +3,14 @@
 # Refresh PC Setup's production container images.
 #
 # Policy (todos/images/1): detect upstream drift for the auto-tracked pins
-# (OpenCode/Codex releases on GitHub, Debian/Rust base digests), then on
-# --apply: snapshot pins, bump them, preserve :previous tags, rebuild stale
-# images with --no-cache in base -> harness order, validate, and leave
-# rollout to the operator.
+# (OpenCode/Codex releases on GitHub, Debian/Rust base digests, PyPI
+# distributions, crates.io crates), then on --apply: snapshot pins, bump
+# them, preserve :previous tags, rebuild stale images with --no-cache in
+# base -> harness order, validate, and leave rollout to the operator.
+#
+# HOLD_VARS pins are notify-only: reported every run, never bumped, never
+# rebuilt. Crates track stable only; emcd-agents tracks the highest
+# non-yanked release by PEP 440 ordering.
 #
 # Convergence model: every image built here carries a
 # pc-setup.refresh-pins label hashing the pins files it was built from.
@@ -314,12 +318,162 @@ for name in base opencode codex; do
         || die2 "cistella/${name}:local does not exist; build it first"
 done
 
-# All four discoveries must complete before any live mutation. Any
+# --- phase-2 tracks ---------------------------------------------------------
+# PyPI distributions and crates.io crates, all baked into the base image
+# (hence base pins). Channel policy is explicit per pin. PyPI stable
+# tracks the highest eligible stable release proven from the releases
+# list (non-dev, non-yanked with files) rather than trusting
+# info.version; emcd-agents tracks the highest non-dev, non-yanked
+# release of either channel by PEP 440 ordering (packaging library
+# first, pip vendored copy fallback), so a future stable supersedes
+# alphas with no manual channel switch and yanked releases never win.
+# Crates use SemVer-correct eligibility and numeric major/minor/patch
+# ranking (PEP 440 misreads SemVer prereleases such as 1.2.3-1, and
+# chokes on labels like -nightly.1); prereleases are skipped, build
+# metadata is ignored per SemVer. No lexical version comparison
+# anywhere.
+#
+# HOLD_VARS lists pins that are notify-only: drift is reported every run
+# (check and apply paths alike) but never bumped and never triggers a
+# rebuild. PRE_COMMIT_VERSION is held because bumps must coordinate
+# .pre-commit-config.yaml updates across projects.
+# comparison anywhere.
+
+HOLD_VARS=" PRE_COMMIT_VERSION "
+
+USER_AGENT="pc-setup-refresh-images/1 (local maintenance script)"
+
+is_held() {
+    [[ "${HOLD_VARS}" == *" $1 "* ]]
+}
+
+hold_reason() {
+    case "$1" in
+        PRE_COMMIT_VERSION) printf '%s' "needs coordinated .pre-commit-config.yaml bumps across projects" ;;
+        *) printf '%s' "held" ;;
+    esac
+}
+
+held=""
+
+note_held() {
+    held+="${1}"$'\n'
+}
+
+version_py() {
+    cat <<'PYEOF'
+try:
+    from packaging.version import Version
+except ImportError:
+    from pip._vendor.packaging.version import Version
+PYEOF
+}
+
+pypi_latest() {
+    local _outvar="$1" dist="$2" channel="$3" _json _ver
+    _json="$(xcurl --max-time 30 --user-agent "${USER_AGENT}" \
+        "https://pypi.org/pypi/${dist}/json")" || return 1
+    _ver="$(printf '%s' "${_json}" | python3 -c "
+$(version_py)
+import json,sys
+channel = sys.argv[1]
+d = json.load(sys.stdin)
+def live(fs):
+    return fs and any(not f.get('yanked', False) for f in fs)
+if channel == 'stable':
+    cands = [v for v, fs in d['releases'].items()
+             if live(fs) and not Version(v).is_prerelease
+             and not Version(v).is_devrelease]
+    if not cands:
+        raise SystemExit('no eligible stable releases')
+    print(max(cands, key=Version))
+else:
+    cands = [v for v, fs in d['releases'].items()
+             if live(fs) and not Version(v).is_devrelease]
+    if not cands:
+        raise SystemExit('no eligible releases')
+    print(max(cands, key=Version))
+" "${channel}")" || return 1
+    [[ -n "${_ver}" ]] || return 1
+    printf -v "${_outvar}" '%s' "${_ver}"
+}
+
+crate_latest() {
+    local _outvar="$1" name="$2" _json _ver
+    _json="$(xcurl --max-time 30 --user-agent "${USER_AGENT}" \
+        --header 'Accept: application/json' \
+        "https://crates.io/api/v1/crates/${name}")" || return 1
+    _ver="$(printf '%s' "${_json}" | python3 -c "
+import json, re, sys
+vs = json.load(sys.stdin)['versions']
+best = None
+best_key = None
+for v in vs:
+    if v.get('yanked', False):
+        continue
+    m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?', v['num'])
+    if not m:
+        continue
+    if m.group(4) is not None:
+        continue  # SemVer prerelease: never eligible for stable tracking
+    key = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    if best_key is None or key > best_key:
+        best_key, best = key, v['num']
+if best is None:
+    raise SystemExit('no eligible versions')
+print(best)
+")" || return 1
+    [[ -n "${_ver}" ]] || return 1
+    printf -v "${_outvar}" '%s' "${_ver}"
+}
+
+discover_base_pin() {
+    # $1 = VAR in base pins, $2 = human track name for reports.
+    # Latest value arrives in $3 (set by caller).
+    local var="$1" track="$2" latest="$3" current
+    pin_value "${snap_base}" "${var}" current \
+        || die2 "cannot read ${var}"
+    [[ "${latest}" == "${current}" ]] && return 0
+    if is_held "${var}"; then
+        note_held "${track} ${var} ${current} -> ${latest} ($(hold_reason "${var}"))"
+        return 0
+    fi
+    want_pin "${base_pins}" "${var}" "${latest}"
+    note_drift "${track} ${var} ${current} -> ${latest}"
+}
+
+discover_pypi() {
+    # $1 = dist name, $2 = VAR, $3 = channel stable|any.
+    local latest
+    if [[ "$3" == "stable" ]]; then
+        pypi_latest latest "$1" stable || die2 "$1 release lookup failed"
+    else
+        pypi_latest latest "$1" any || die2 "$1 release lookup failed"
+    fi
+    discover_base_pin "$2" "pypi $1" "${latest}"
+}
+
+discover_crate() {
+    # $1 = crate name, $2 = VAR. Crates always track stable.
+    local latest
+    crate_latest latest "$1" || die2 "$1 release lookup failed"
+    discover_base_pin "$2" "crate $1" "${latest}"
+}
+
+# All discoveries must complete before any live mutation. Any
 # operational failure exits 2 here with pins byte-identical.
 discover_opencode
 discover_codex
 discover_digest_pin DEBIAN_IMAGE
 discover_digest_pin RUST_IMAGE
+discover_pypi emcd-agents EMCD_AGENTS_VERSION any
+discover_pypi hatch HATCH_VERSION stable
+discover_pypi pre-commit PRE_COMMIT_VERSION stable
+discover_pypi copier COPIER_VERSION stable
+discover_crate agentmux AGENTMUX_VERSION
+discover_crate nbspec NBSPEC_VERSION
+discover_crate nb-mcp-server NB_MCP_VERSION
+discover_crate linecheck LINECHECK_VERSION
 
 # --- staleness via build labels ---------------------------------------------
 # An image is stale when its pc-setup.refresh-pins label is missing or
@@ -365,6 +519,12 @@ compute_stale
 # Unconditional check-mode boundary: check never proceeds past this point,
 # so no pin write, tag, build, or validation can run under a shared lock.
 # Exit 1 means "apply would do work": upstream drift, stale images, or both.
+# Held pins print in every mode before the check/apply split below, so
+# notify-only drift stays visible on all paths without ever triggering
+# work.
+if [[ -n "${held}" ]]; then
+    printf 'held (notify-only, never applied):\n%s' "${held}"
+fi
 if [[ "${mode}" == "check" ]]; then
     if [[ -n "${drift}" ]]; then
         printf 'drift detected:\n%s' "${drift}"

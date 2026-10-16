@@ -22,8 +22,17 @@ Configuration and maintenance workspace for PC installations.
 ## Image Refresh
 
 `scripts/refresh-images` owns the refresh policy (`todos/images/1`):
-auto-tracked pins are OpenCode/Codex GitHub releases plus the Debian/Rust
-base digests (remote manifest lookup; nothing is pulled to check).
+auto-tracked pins are OpenCode/Codex GitHub releases, Debian/Rust base
+digests (remote manifest lookup; nothing is pulled to check), PyPI
+distributions (`emcd-agents`, `hatch`, `pre-commit`, `copier`), and
+crates.io crates (`agentmux`, `nbspec`, `nb-mcp-server`, `linecheck`).
+PyPI stable tracks the highest eligible stable proven from the release
+list (non-dev, non-yanked with files), never bare `info.version`;
+`emcd-agents` tracks the highest non-dev, non-yanked release by PEP 440
+ordering. Crates use SemVer-correct numeric ranking with prereleases
+excluded (PEP 440 misreads tags like `1.2.3-1`). `PRE_COMMIT_VERSION` is on the notify-only
+HOLD list (reported every run, never bumped): its bumps must coordinate
+`.pre-commit-config.yaml` updates across projects.
 
 - `refresh-images check` — report drift. Exit `0` clean and converged,
   `1` completed check that found work to do (upstream drift, stale images,
