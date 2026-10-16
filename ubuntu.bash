@@ -55,6 +55,7 @@ sudo apt-get install --yes \
     python3-dev python3-pip python3-venv \
     ripgrep \
     rustup \
+    shellcheck \
     socat \
     slirp4netns \
     tk-dev \
