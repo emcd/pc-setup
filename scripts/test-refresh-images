@@ -42,6 +42,7 @@ cp "${repo_root}/images/cistella/codex/pins.sh" "${skeleton}/images/cistella/cod
 # --- stubs ------------------------------------------------------------------
 stubbin="${suite_root}/stubbin"
 mkdir -p "${stubbin}"
+export STUBBIN="${stubbin}"
 
 # Stub curl: scenario via $CURL_MODE. Routes on URL substring.
 cat > "${stubbin}/curl" <<'STUB'
@@ -61,6 +62,17 @@ for a in "$@"; do
 done
 mode="${CURL_MODE:-ok}"
 fail_exit() { exit "${1:-22}"; }
+# Attempt counting for the retry tests (opt-in; counts releases-list
+# calls including failed ones, so it sits above every early exit).
+if [[ -n "${STUB_CODEX_COUNT:-}" ]]; then
+    case "${url}" in
+        *openai/codex/releases\?*)
+            page="$(printf '%s' "${url}" | sed -E 's/.*[?&]page=([0-9]+).*/\1/')"
+            [[ "${page}" == "${url}" ]] && page=1
+            echo "codex-call page=${page}" >> "${PODMAN_STATE:-/tmp}/codex-calls"
+            ;;
+    esac
+fi
 repo_digest() {
     case "${url}" in
         */library/rust/*) printf '%s' "${STUB_RUST_DIGEST:-sha256:abc}" ;;
@@ -88,12 +100,34 @@ case "${url}" in
     *api.github.com/repos/openai/codex*)
         [[ "${mode}" == "malformed" ]] && { echo "not json"; exit 0; }
         [[ "${mode}" == "empty-codex" ]] && { echo "[]"; exit 0; }
-        python3 -c '
-import os
-tags = os.environ.get("STUB_CODEX_TAGS", "rust-v0.162.1").split()
-import json
-print(json.dumps([{"tag_name": t, "prerelease": False, "draft": False,
-                   "published_at": "2026-10-%02dT00:00:00Z" % (10 + i)}
+        [[ "${mode}" == "codex-malformed" ]] && { echo "not json"; exit 0; }
+        [[ "${mode}" == "codex-schema" ]] && { echo '[{}]'; exit 0; }
+        # Flaky-endpoint simulation: fail or corrupt the first N codex
+        # calls, then behave. Counter lives beside the fixture
+        # (XDG_RUNTIME_DIR).
+        if [[ -n "${STUB_CODEX_FAIL_FIRST:-}${STUB_CODEX_MALFORMED_FIRST:-}" ]]; then
+            cf="${XDG_RUNTIME_DIR:-/tmp}/stub-codex-fails"
+            n="$(cat "${cf}" 2>/dev/null || echo 0)"
+            n="$((n + 1))"; printf '%s' "${n}" > "${cf}"
+            if [[ -n "${STUB_CODEX_MALFORMED_FIRST:-}" ]] \
+                && [[ "${n}" -le "${STUB_CODEX_MALFORMED_FIRST}" ]]; then
+                echo "not json"; exit 0
+            fi
+            if [[ -n "${STUB_CODEX_FAIL_FIRST:-}" ]] \
+                && [[ "${n}" -le "${STUB_CODEX_FAIL_FIRST}" ]]; then
+                fail_exit 22
+            fi
+        fi
+        page="$(printf '%s' "${url}" | sed -E 's/.*[?&]page=([0-9]+).*/\1/')"
+        [[ "${page}" == "${url}" ]] && page=1
+        eval "pagetags=\"\${STUB_CODEX_TAGS_P${page}:-}\""
+        [[ -n "${pagetags}" ]] || pagetags="${STUB_CODEX_TAGS:-rust-v0.162.1}"
+        STUB_CODEX_TAGS_PAGED="${pagetags}" python3 -c '
+import json, os
+tags = os.environ["STUB_CODEX_TAGS_PAGED"].split()
+import datetime
+print(json.dumps([{"tag_name": t, "prerelease": t.endswith("-pre") or "alpha" in t, "draft": False,
+                   "published_at": "2026-10-%02dT00:00:00Z" % (20 - i,)}
                   for i, t in enumerate(tags)]))'
         ;;
     *auth.docker.io/token*)
@@ -153,6 +187,19 @@ print(json.dumps({"crate": {"id": "x"}, "versions": vs}))'
 esac
 STUB
 chmod +x "${stubbin}/curl"
+
+# Stub gh: only `api <endpoint>` is used; translate to the curl stub so
+# all GitHub scenarios share one fixture implementation.
+cat > "${stubbin}/gh" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" != "api" || -z "${2:-}" ]]; then
+    echo "stub: only gh api <endpoint> supported" >&2
+    exit 3
+fi
+exec "${STUBBIN:?}/curl" --fail --silent --show-error --max-time 30 \
+    "https://api.github.com/$2"
+STUB
+chmod +x "${stubbin}/gh"
 
 # Stub podman: state dir via $PODMAN_STATE. Tags are references to image
 # IDs (ids: TAG=ID); per-image labels live in imglabels (ID=label). This
@@ -334,6 +381,8 @@ current_versions_env() {
     STUB_CRATE_YANKED_AGENTMUX=""; export STUB_CRATE_YANKED_AGENTMUX
     STUB_CRATE_NEW_LINECHECK=""; export STUB_CRATE_NEW_LINECHECK
     STUB_CRATE_PRE_LINECHECK=""; export STUB_CRATE_PRE_LINECHECK
+    STUB_CODEX_TAGS_P1=""; export STUB_CODEX_TAGS_P1
+    STUB_CODEX_TAGS_P2=""; export STUB_CODEX_TAGS_P2
 }
 
 # --- cases --------------------------------------------------------------------
@@ -376,23 +425,28 @@ for mode in http-fail malformed empty-codex registry-fail; do
         || report fail "check-err-${mode}" "exit=${code}"
 done
 
-# 7. late discovery failure in apply -> 2, pins byte-identical, tags unchanged
+# 7. late codex flake in apply -> codex track skipped, opencode drift
+#     still applied and rebuilt; codex pins frozen; exit 0.
 r="$(new_case late-fail)"
 seed_images "${r}"
 current_versions_env "${r}"
-before_pins="$(pins_sha "${r}")"
-before_tags="$(sort "${r}/state/ids" | sha256sum)"
 code="0"
 CURL_MODE="late-codex-fail" STUB_OC_TAG="v9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
-after_pins="$(pins_sha "${r}")"
-after_tags="$(sort "${r}/state/ids" | sha256sum)"
-if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${before_tags}" == "${after_tags}" ]]; then
-    report ok "apply-late-discovery-fail"
+# shellcheck disable=SC1091
+got_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+# shellcheck disable=SC1091
+got_cx="$( ( . "${r}/images/cistella/codex/pins.sh" && printf '%s' "${CODEX_VERSION}" ) )"
+# shellcheck disable=SC1091
+want_cx="$( ( . "${repo_root}/images/cistella/codex/pins.sh" && printf '%s' "${CODEX_VERSION}" ) )"
+if [[ "${code}" == "0" && "${got_oc}" == "9.99.0" && "${got_cx}" == "${want_cx}" ]] \
+    && grep -q "skipped" "${r}/stdout" \
+    && grep -q '^build cistella/opencode:local' "${r}/state/buildlog"; then
+    report ok "apply-late-codex-skip"
 else
-    report fail "apply-late-discovery-fail" "exit=${code}"
+    report fail "apply-late-codex-skip" "exit=${code} oc=${got_oc} cx=${got_cx}"
 fi
 
 # 8. late build failure -> 2, exact pre-run :local IDs + pin bytes restored.
@@ -842,6 +896,142 @@ if [[ "${code}" == "0" && "${got_pc}" != "9.99.0" && "${got_hatch}" == "9.99.0" 
     report ok "held-mixed-with-auto"
 else
     report fail "held-mixed-with-auto" "exit=${code} pre-commit=${got_pc} hatch=${got_hatch}"
+fi
+
+# 30. codex paging: page 1 prerelease-only, page 2 stable current
+#     (page 2 must serve the pinned version, not a hardcoded tag, or the
+#     drift check below correctly reports exit 1).
+r="$(new_case codex-paging)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_CODEX_TAGS_P1="rust-v0.164.0-alpha.3" STUB_CODEX_TAGS_P2="rust-v${STUB_CODEX_V}" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+[[ "${code}" == "0" ]] && report ok "codex-paging-skips-pre" \
+    || report fail "codex-paging-skips-pre" "exit=${code}"
+
+# 31. codex skip: endpoint fails on every attempt -> 3 tries, then skip
+#     with a visible notice; pins untouched; exit 1 (unknown state).
+r="$(new_case codex-skip)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=late-codex-fail STUB_CODEX_COUNT=1 \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+calls="$(grep -c . "${r}/state/codex-calls" 2>/dev/null || echo 0)"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
+    && "${calls}" == "3" ]] && grep -q "skipped" "${r}/stdout" \
+    && ! grep -q "codex CODEX_VERSION" "${r}/stdout"; then
+    report ok "codex-skip-after-retries"
+else
+    report fail "codex-skip-after-retries" "exit=${code} calls=${calls}"
+fi
+
+# 32. codex retry: first call fails, second succeeds -> exit 0, no skip.
+r="$(new_case codex-retry)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+STUB_CODEX_FAIL_FIRST=1 STUB_CODEX_COUNT=1 \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+calls="$(grep -c . "${r}/state/codex-calls" 2>/dev/null || echo 0)"
+if [[ "${code}" == "0" ]] && ! grep -q "skipped" "${r}/stdout" \
+    && [[ "${calls}" -ge "2" ]]; then
+    report ok "codex-retry-succeeds"
+else
+    report fail "codex-retry-succeeds" "exit=${code} calls=${calls}"
+fi
+
+# 33. skip visible on the apply path too: notice printed, nothing
+#     rebuilt, pins frozen, exit 0 (apply did all it could).
+r="$(new_case codex-skip-apply)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=late-codex-fail \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+no_builds=0
+[[ -s "${r}/state/buildlog" ]] || no_builds=1
+if [[ "${code}" == "0" && "${before_pins}" == "${after_pins}" \
+    && "${no_builds}" == "1" ]] && grep -q "skipped" "${r}/stdout"; then
+    report ok "codex-skip-visible-on-apply"
+else
+    report fail "codex-skip-visible-on-apply" "exit=${code}"
+fi
+
+# 34. persistent parse failures retry then skip: every codex page is
+#     corrupt, so no walk may succeed; pins frozen; exit 1 with notice.
+r="$(new_case codex-malformed-skip)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=codex-malformed STUB_CODEX_COUNT=1 \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+calls="$(grep -c . "${r}/state/codex-calls" 2>/dev/null || echo 0)"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
+    && "${calls}" == "3" ]] && grep -q "skipped" "${r}/stdout" \
+    && ! grep -q "codex CODEX_VERSION" "${r}/stdout"; then
+    report ok "codex-malformed-retries-then-skips"
+else
+    report fail "codex-malformed-retries-then-skips" "exit=${code} calls=${calls}"
+fi
+
+# 35. single corrupt response recovers on retry: first call malformed,
+#     second clean and current -> exit 0, no skip, no silent older-tag win.
+r="$(new_case codex-malformed-retry)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+STUB_CODEX_MALFORMED_FIRST=1 STUB_CODEX_COUNT=1 \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+calls="$(grep -c . "${r}/state/codex-calls" 2>/dev/null || echo 0)"
+first_two="$(head -2 "${r}/state/codex-calls" 2>/dev/null | tr '\n' ' ')"
+if [[ "${code}" == "0" ]] && ! grep -q "skipped" "${r}/stdout" \
+    && [[ "${calls}" -ge "2" ]] \
+    && [[ "${first_two}" == "codex-call page=1 codex-call page=1 " ]]; then
+    report ok "codex-malformed-recovers-on-retry"
+else
+    report fail "codex-malformed-recovers-on-retry" "exit=${code} calls=${calls} seq=${first_two}"
+fi
+
+# 36. schema-corrupt pages never read as clean no-match: persistent
+#     `[{}]` responses retry 3x then skip (exit 1, pins frozen). Under
+#     the old conflation this walked 10 clean pages to deterministic 2.
+r="$(new_case codex-schema-skip)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=codex-schema STUB_CODEX_COUNT=1 \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+calls="$(grep -c . "${r}/state/codex-calls" 2>/dev/null || echo 0)"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
+    && "${calls}" == "3" ]] && grep -q "skipped" "${r}/stdout" \
+    && ! grep -q "codex CODEX_VERSION" "${r}/stdout"; then
+    report ok "codex-schema-retries-then-skips"
+else
+    report fail "codex-schema-retries-then-skips" "exit=${code} calls=${calls}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

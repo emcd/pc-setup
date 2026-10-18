@@ -32,10 +32,11 @@
 #   refresh-images --apply              # reconcile pins and images
 #   refresh-images --rollback [target]  # restore :previous over :local
 #
-# Exit contract (timer-friendly, non-interactive):
+# Exit contract (timer-friendly, non-interactive, grep-style):
 #   0  completed, nothing to do (check clean and converged, apply no-op)
-#   1  completed check that found work to do: upstream drift, stale
-#      images, or both (check mode only)
+#   1  completed check that found work to do or state unknown: upstream
+#      drift, stale images, skipped tracks, or any combination (check
+#      mode only)
 #   2  operational error, usage error, lock refusal, or apply/rollback
 #      failure. Never used for drift.
 
@@ -82,15 +83,13 @@ xcurl() {
     curl --fail --silent --show-error "$@" || die2 "request failed (curl exit $?)"
 }
 
-github_auth_args=()
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    github_auth_args=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
-fi
-
+# GitHub API goes through `gh` (installed by ubuntu.bash, authed via its
+# own credential store): no exported tokens, authed rate limits, and one
+# fewer credential to manage for timer use. Returns nonzero instead of
+# exiting so retrying callers (codex discovery) can catch failures; every
+# caller already handles failure with an explicit `|| return 1` / `|| die2`.
 github_api() {
-    xcurl --max-time 30 \
-        --header "Accept: application/vnd.github+json" \
-        "${github_auth_args[@]}" "$@"
+    gh api "$@" || return 1
 }
 
 # Lookup helpers assign through an outvar set by the caller and return
@@ -111,21 +110,53 @@ latest_opencode_tag() {
 }
 
 latest_codex_rust_tag() {
-    local _outvar="$1" _json _tag
-    _json="$(github_api "https://api.github.com/repos/openai/codex/releases?per_page=100")" \
-        || return 1
-    _tag="$(printf '%s' "${_json}" \
-        | python3 -c '
+    # The full releases list is too large for one reliable response
+    # (api.github.com 504s on per_page=100), so walk small pages in
+    # global reverse-chronological order: the first page holding an
+    # eligible stable rust-v tag yields the newest one.
+    # Returns 1 on operational (transport/parse) failure: retryable.
+    # Returns 2 when all 10 pages walk clean but hold no stable tag: a
+    # deterministic outcome, not a flake, so callers must not retry it.
+    local _outvar="$1" _json _tag page _status
+    for page in 1 2 3 4 5 6 7 8 9 10; do
+        _json="$(github_api "repos/openai/codex/releases?per_page=30&page=${page}")" \
+            || return 1
+        # Exit 10 below means "valid release-list page, no eligible tag"
+        # (keep walking). The shape gate first rejects non-list roots
+        # and records without a string tag_name, so only a genuine
+        # release list can report no-match. Any other nonzero status is
+        # a parse/schema failure (retryable), never an empty page:
+        # corrupt responses must not masquerade as clean, or a valid
+        # later page could win without establishing the earlier page
+        # was clean.
+        _tag="$(printf '%s' "${_json}" \
+            | python3 -c '
 import json,sys
-rels = [r for r in json.load(sys.stdin)
-        if r.get("tag_name", "").startswith("rust-v") and not r.get("prerelease") and not r.get("draft")]
+d = json.load(sys.stdin)
+if not isinstance(d, list):
+    raise SystemExit("malformed root")
+for r in d:
+    if not isinstance(r, dict) or not isinstance(r.get("tag_name"), str):
+        raise SystemExit("malformed record")
+rels = [r for r in d
+        if r["tag_name"].startswith("rust-v") and not r.get("prerelease") and not r.get("draft")]
 if not rels:
-    raise SystemExit("no eligible rust-v releases")
+    raise SystemExit(10)
 rels.sort(key=lambda r: r["published_at"], reverse=True)
 print(rels[0]["tag_name"])
-')" || return 1
-    [[ "${_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-    printf -v "${_outvar}" '%s' "${_tag}"
+')" || _status="$?"
+        if [[ -n "${_status:-}" ]]; then
+            if [[ "${_status}" == "10" ]]; then
+                _status=""
+                continue
+            fi
+            return 1
+        fi
+        [[ "${_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+        printf -v "${_outvar}" '%s' "${_tag}"
+        return 0
+    done
+    return 2
 }
 
 # Latest multi-arch index digest for a docker.io library ref without
@@ -243,10 +274,30 @@ discover_opencode() {
 }
 
 discover_codex() {
-    local current tag version url sha
+    local current tag version url sha attempt
     pin_value "${snap_codex}" CODEX_VERSION current \
         || die2 "cannot read CODEX_VERSION"
-    latest_codex_rust_tag tag || die2 "codex release lookup failed"
+    # The codex releases endpoint flakes (rate limits, 504s on large
+    # pages): two retries on operational failure, then skip the track
+    # with a visible notice rather than failing the whole run. No sleep
+    # between attempts: endpoint outages last minutes, so back-to-back
+    # retries only catch momentary blips and the skip policy handles the
+    # rest. A clean 10-page walk with no stable tag is deterministic, not
+    # a flake, so it still fails the run.
+    local code
+    for attempt in 1 2 3; do
+        if latest_codex_rust_tag tag; then
+            break
+        else
+            code="$?"
+            if [[ "${code}" == "2" ]]; then
+                die2 "codex release lookup found no stable tag in 10 pages"
+            elif [[ "${attempt}" == "3" ]]; then
+                note_skipped "codex release lookup failed after 3 attempts (flaky endpoint; track skipped, pins unchanged)"
+                return 0
+            fi
+        fi
+    done
     version="${tag#rust-v}"
     [[ "${version}" == "${current}" ]] && return 0
     for plat in arm64 amd64; do
@@ -360,6 +411,16 @@ note_held() {
     held+="${1}"$'\n'
 }
 
+# Tracks skipped on failure, not policy: a discovery that exhausts its
+# retries leaves pins untouched and is reported every run (check and
+# apply alike), exactly like held notices. Unlike held drift, a skip
+# means state is unknown, so a skip-only check still exits 1.
+skipped=""
+
+note_skipped() {
+    skipped+="${1}"$'\n'
+}
+
 version_py() {
     cat <<'PYEOF'
 try:
@@ -461,7 +522,9 @@ discover_crate() {
 }
 
 # All discoveries must complete before any live mutation. Any
-# operational failure exits 2 here with pins byte-identical.
+# operational failure exits 2 here with pins byte-identical, except the
+# flaky codex endpoint: two retries, then the track is skipped with a
+# visible notice (exit 1 on a skip-only check) instead of failing the run.
 discover_opencode
 discover_codex
 discover_digest_pin DEBIAN_IMAGE
@@ -518,12 +581,16 @@ compute_stale
 
 # Unconditional check-mode boundary: check never proceeds past this point,
 # so no pin write, tag, build, or validation can run under a shared lock.
-# Exit 1 means "apply would do work": upstream drift, stale images, or both.
-# Held pins print in every mode before the check/apply split below, so
-# notify-only drift stays visible on all paths without ever triggering
-# work.
+# Exit 1 means "apply would do work, or state is unknown": upstream
+# drift, stale images, skipped tracks, or any combination. Held pins and
+# skipped tracks print in every mode before the check/apply split below,
+# so notify-only drift and skips stay visible on all paths without ever
+# triggering work themselves.
 if [[ -n "${held}" ]]; then
     printf 'held (notify-only, never applied):\n%s' "${held}"
+fi
+if [[ -n "${skipped}" ]]; then
+    printf 'skipped (unknown state, pins unchanged):\n%s' "${skipped}"
 fi
 if [[ "${mode}" == "check" ]]; then
     if [[ -n "${drift}" ]]; then
@@ -532,7 +599,7 @@ if [[ "${mode}" == "check" ]]; then
     if [[ -n "${stale_images}" ]]; then
         printf 'stale images (pins/images out of sync):%s\n' "${stale_images}"
     fi
-    if [[ -n "${drift}" || -n "${stale_images}" ]]; then
+    if [[ -n "${drift}" || -n "${stale_images}" || -n "${skipped}" ]]; then
         exit 1
     fi
     echo "images up to date"
@@ -542,11 +609,15 @@ fi
 # --- apply-only below this line (exclusive lock held) -------------------------
 if [[ -n "${drift}" ]]; then
     printf 'drift detected:\n%s' "${drift}"
-elif [[ -z "${stale_images}" ]]; then
-    echo "images up to date"
-    exit 0
-else
+elif [[ -n "${stale_images}" ]]; then
     echo "pins/images out of sync for:${stale_images} (reconciling without upstream drift)"
+else
+    if [[ -n "${skipped}" ]]; then
+        echo "nothing rebuilt (skipped tracks unresolved)"
+    else
+        echo "images up to date"
+    fi
+    exit 0
 fi
 
 # --- apply ------------------------------------------------------------------

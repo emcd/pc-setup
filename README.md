@@ -35,10 +35,13 @@ HOLD list (reported every run, never bumped): its bumps must coordinate
 `.pre-commit-config.yaml` updates across projects.
 
 - `refresh-images check` — report drift. Exit `0` clean and converged,
-  `1` completed check that found work to do (upstream drift, stale images,
-  or both), `2` operational error (network, parse, registry, lock refusal).
-  `1` is reserved for completed checks; failures never masquerade as drift.
-  Check is strictly read-only: it never writes pins, tags, builds, or runs,
+  `1` completed check that found work to do or state unknown (upstream
+  drift, stale images, skipped tracks, or any combination), `2`
+  operational error (network, parse, registry, lock refusal). `1` is
+  reserved for completed checks; failures never masquerade as drift. The
+  flaky Codex endpoint gets two retries, then its track is skipped with a
+  visible notice (pins untouched) instead of failing the run. Check is
+  strictly read-only: it never writes pins, tags, builds, or runs,
   even when images are stale — that is what `--apply` is for.
 - `refresh-images --apply` — snapshot pins, bump them, preserve `:previous`
   tags, rebuild stale images `--no-cache` (base, then harnesses), validate
