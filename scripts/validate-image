@@ -56,6 +56,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v rg)" = "/usr/bin/rg"
         test "$(command -v ssh-keygen)" = "/usr/bin/ssh-keygen"
         test "$(command -v uv)" = "/usr/local/bin/uv"
+        test "$(command -v vibelinter)" = "/usr/local/bin/vibelinter"
         test "$(command -v tmux)" = "/usr/local/bin/tmux"
         test "$(command -v xxd)" = "/usr/bin/xxd"
         test -x /usr/bin/cc
