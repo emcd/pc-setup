@@ -4,7 +4,13 @@
       "command": "agentmux",
       "args": [
         "host", "mcp"
-      ]
+      ],
+      "env": {
+        "AGENTMUX_BUNDLE": "${AGENTMUX_BUNDLE}",
+        "AGENTMUX_SESSION": "${AGENTMUX_SESSION}",
+        "AGENTMUX_CONFIGURATION_DIRECTORY": "${AGENTMUX_CONFIGURATION_DIRECTORY}",
+        "AGENTMUX_STATE_DIRECTORY": "${AGENTMUX_STATE_DIRECTORY}"
+      }
     },
     "context7": {
       "command": "npx",
