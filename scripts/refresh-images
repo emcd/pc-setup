@@ -46,6 +46,7 @@ repository_root="${PC_SETUP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pw
 base_pins="${repository_root}/images/cistella/base/pins.sh"
 opencode_pins="${repository_root}/images/cistella/opencode/pins.sh"
 codex_pins="${repository_root}/images/cistella/codex/pins.sh"
+muse_pins="${repository_root}/images/cistella/muse/pins.sh"
 lock_file="${XDG_RUNTIME_DIR:-/tmp}/pc-setup-refresh-images.lock"
 workdir="$(mktemp -d)" || { echo "error: mktemp failed" >&2; exit 2; }
 trap 'rm -rf "${workdir}"' EXIT
@@ -58,7 +59,7 @@ for arg in "$@"; do
         check) mode="check" ;;
         --apply) mode="apply" ;;
         --rollback) mode="rollback" ;;
-        base|opencode|codex)
+        base|opencode|codex|muse)
             if [[ "${mode}" == "rollback" ]]; then
                 rollback_target="${arg}"
             else
@@ -229,9 +230,11 @@ mkdir -p "${snapdir}" || die2 "cannot create snapshot dir"
 snap_base="${snapdir}/base-pins.sh"
 snap_opencode="${snapdir}/opencode-pins.sh"
 snap_codex="${snapdir}/codex-pins.sh"
+snap_muse="${snapdir}/muse-pins.sh"
 cp "${base_pins}" "${snap_base}" || die2 "cannot snapshot base pins"
 cp "${opencode_pins}" "${snap_opencode}" || die2 "cannot snapshot opencode pins"
 cp "${codex_pins}" "${snap_codex}" || die2 "cannot snapshot codex pins"
+cp "${muse_pins}" "${snap_muse}" || die2 "cannot snapshot muse pins"
 
 # --- discovery (read-only; snapshot + network only, no live mutation) -------
 desired="${workdir}/desired.tsv"
@@ -319,6 +322,56 @@ discover_codex() {
     note_drift "codex CODEX_VERSION ${current} -> ${version}"
 }
 
+# Muse ships through Meta's public channel API, not GitHub: one channel
+# document resolves to a complete version-plus-manifest snapshot, and the
+# manifest carries the per-platform checksums, so no tarball download is
+# needed for discovery (the Containerfile verifies the bytes at build).
+# The whole snapshot resolves before any comparison: a rebuild or
+# rollback of older pins never re-resolves latest mid-run.
+discover_muse() {
+    local current channel_out version manifest_url manifest shas arm_sha amd_sha
+    pin_value "${snap_muse}" MUSE_VERSION current \
+        || die2 "cannot read MUSE_VERSION"
+    channel_out="$(xcurl --max-time 30 \
+        "https://api.meta.ai/muse-code/channels/muse-stable" \
+        | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+v = d.get("version") if isinstance(d, dict) else None
+u = d.get("manifest_url") if isinstance(d, dict) else None
+if not isinstance(v, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-R[0-9]+(\.[0-9]+)?", v):
+    raise SystemExit("bad channel version")
+if not isinstance(u, str) or not u.startswith("https://"):
+    raise SystemExit("bad manifest url")
+print(v + "\t" + u)
+')" || die2 "muse channel lookup failed"
+    manifest_url="${channel_out#*$'\t'}"
+    version="${channel_out%%$'\t'*}"
+    [[ "${version}" == "${current}" ]] && return 0
+    manifest="$(xcurl --max-time 30 "${manifest_url}")" \
+        || die2 "muse manifest lookup failed"
+    shas="$(printf '%s' "${manifest}" \
+        | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+if not isinstance(d, dict) or d.get("checksum_algorithm") != "sha256":
+    raise SystemExit("unsupported checksum algorithm")
+arts = d.get("artifacts")
+arm = arts.get("aarch64_linux", {}).get("checksum") if isinstance(arts, dict) else None
+amd = arts.get("x86_linux", {}).get("checksum") if isinstance(arts, dict) else None
+for sha in (arm, amd):
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise SystemExit("bad artifact checksum")
+print(arm + "\t" + amd)
+')" || die2 "muse manifest parse failed"
+    amd_sha="${shas#*$'\t'}"
+    arm_sha="${shas%%$'\t'*}"
+    want_pin "${muse_pins}" MUSE_SHA256_ARM64 "${arm_sha}"
+    want_pin "${muse_pins}" MUSE_SHA256_AMD64 "${amd_sha}"
+    want_pin "${muse_pins}" MUSE_VERSION "${version}"
+    note_drift "muse MUSE_VERSION ${current} -> ${version}"
+}
+
 discover_digest_pin() {
     local var="$1" current full_repo latest
     pin_value "${snap_base}" "${var}" current \
@@ -337,7 +390,7 @@ do_rollback() {
     if [[ -n "${rollback_target}" ]]; then
         names="${rollback_target}"
     else
-        names="base opencode codex"
+        names="base opencode codex muse"
     fi
     for name in ${names}; do
         podman image exists "cistella/${name}:previous" \
@@ -364,7 +417,7 @@ if [[ "${mode}" == "rollback" ]]; then
     exit 0
 fi
 
-for name in base opencode codex; do
+for name in base opencode codex muse; do
     podman image exists "cistella/${name}:local" \
         || die2 "cistella/${name}:local does not exist; build it first"
 done
@@ -527,6 +580,7 @@ discover_crate() {
 # visible notice (exit 1 on a skip-only check) instead of failing the run.
 discover_opencode
 discover_codex
+discover_muse
 discover_digest_pin DEBIAN_IMAGE
 discover_digest_pin RUST_IMAGE
 discover_pypi emcd-agents EMCD_AGENTS_VERSION any
@@ -549,6 +603,7 @@ pins_hash() {
         base) sha256sum "${base_pins}" | cut -d' ' -f1 ;;
         opencode) cat "${base_pins}" "${opencode_pins}" | sha256sum | cut -d' ' -f1 ;;
         codex) cat "${base_pins}" "${codex_pins}" | sha256sum | cut -d' ' -f1 ;;
+        muse) cat "${base_pins}" "${muse_pins}" | sha256sum | cut -d' ' -f1 ;;
     esac
 }
 
@@ -570,7 +625,7 @@ apply_desired_pins() {
 compute_stale() {
     stale_images=""
     local name
-    for name in base opencode codex; do
+    for name in base opencode codex muse; do
         if [[ "$(image_label "${name}")" != "$(pins_hash "${name}")" ]]; then
             stale_images+="${name} "
         fi
@@ -629,6 +684,7 @@ restore_all() {
     cp "${snap_base}" "${base_pins}"
     cp "${snap_opencode}" "${opencode_pins}"
     cp "${snap_codex}" "${codex_pins}"
+    cp "${snap_muse}" "${muse_pins}"
     local name
     for name in ${preserved:-}; do
         podman tag "cistella/${name}:previous" "cistella/${name}:local" \
@@ -676,7 +732,7 @@ for name in ${stale_images}; do
 done
 for name in ${stale_images}; do
     case "${name}" in
-        opencode|codex) rebuild_one "${name}" ;;
+        opencode|codex|muse) rebuild_one "${name}" ;;
     esac
 done
 

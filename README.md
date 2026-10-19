@@ -12,20 +12,22 @@ Configuration and maintenance workspace for PC installations.
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
 - Cistella profile mount sources: `bash ./scripts/provision-cistella-mount-sources`
 - Cistella profile backup and deploy: `bash ./scripts/deploy-cistella-profiles`
-- Cistella images: `bash ./scripts/build-image [base|opencode|codex]` then
-  `bash ./scripts/validate-image [base|opencode|codex]`. No argument builds the
+- Cistella images: `bash ./scripts/build-image [base|opencode|codex|muse]` then
+  `bash ./scripts/validate-image [base|opencode|codex|muse]`. No argument builds the
   shared base from cache, then the OpenCode image. `--no-cache` applies only
   to the named image. After a shared pin change, rebuild `base`, then each
   harness. Tags: `cistella/base:local`, `cistella/opencode:local`,
-  `cistella/codex:local`.
+  `cistella/codex:local`, `cistella/muse:local`.
 
 ## Image Refresh
 
 `scripts/refresh-images` owns the refresh policy (`todos/images/1`):
-auto-tracked pins are OpenCode/Codex GitHub releases, Debian/Rust base
-digests (remote manifest lookup; nothing is pulled to check), PyPI
-distributions (`emcd-agents`, `hatch`, `pre-commit`, `copier`), and
-crates.io crates (`agentmux`, `nbspec`, `nb-mcp-server`, `linecheck`).
+auto-tracked pins are OpenCode/Codex GitHub releases, the Muse
+`muse-stable` channel (version plus manifest checksums; nothing is
+pulled to check), Debian/Rust base digests (remote manifest lookup;
+nothing is pulled to check), PyPI distributions (`emcd-agents`,
+`hatch`, `pre-commit`, `copier`), and crates.io crates (`agentmux`,
+`nbspec`, `nb-mcp-server`, `linecheck`).
 PyPI stable tracks the highest eligible stable proven from the release
 list (non-dev, non-yanked with files), never bare `info.version`;
 `emcd-agents` tracks the highest non-dev, non-yanked release by PEP 440

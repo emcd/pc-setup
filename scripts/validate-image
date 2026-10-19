@@ -7,7 +7,7 @@ target="opencode"
 
 for arg in "$@"; do
     case "${arg}" in
-        base|opencode|codex) target="${arg}" ;;
+        base|opencode|codex|muse) target="${arg}" ;;
         *)
             echo "error: unknown argument ${arg}" >&2
             exit 1
@@ -69,7 +69,7 @@ podman run --rm --userns=keep-id "${image_tag}" gh --version | grep --quiet "${G
 case "${target}" in
     base)
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
-            sh -c 'test -z "$(command -v opencode || true)" && test -z "$(command -v codex || true)"'
+            sh -c 'test -z "$(command -v opencode || true)" && test -z "$(command -v codex || true)" && test -z "$(command -v muse || true)"'
         ;;
     opencode)
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
@@ -82,6 +82,12 @@ case "${target}" in
             sh -c 'test "$(command -v codex)" = "/usr/local/bin/codex"'
         podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
             sh -c "codex --version 2>&1 | grep --quiet '${CODEX_VERSION}'"
+        ;;
+    muse)
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v muse)" = "/usr/local/bin/muse"'
+        podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
+            sh -c "muse --version 2>&1 | grep --quiet '${MUSE_VERSION}'"
         ;;
 esac
 

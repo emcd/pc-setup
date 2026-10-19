@@ -32,12 +32,14 @@ report() {
 # --- fixture repo -----------------------------------------------------------
 skeleton="${suite_root}/skeleton"
 mkdir -p "${skeleton}/scripts" "${skeleton}/images/cistella/base" \
-    "${skeleton}/images/cistella/opencode" "${skeleton}/images/cistella/codex"
+    "${skeleton}/images/cistella/opencode" "${skeleton}/images/cistella/codex" \
+    "${skeleton}/images/cistella/muse"
 cp "${repo_root}/scripts/refresh-images" "${repo_root}/scripts/build-image" \
     "${repo_root}/scripts/validate-image" "${skeleton}/scripts/"
 cp "${repo_root}/images/cistella/base/pins.sh" "${skeleton}/images/cistella/base/"
 cp "${repo_root}/images/cistella/opencode/pins.sh" "${skeleton}/images/cistella/opencode/"
 cp "${repo_root}/images/cistella/codex/pins.sh" "${skeleton}/images/cistella/codex/"
+cp "${repo_root}/images/cistella/muse/pins.sh" "${skeleton}/images/cistella/muse/"
 
 # --- stubs ------------------------------------------------------------------
 stubbin="${suite_root}/stubbin"
@@ -129,6 +131,36 @@ import datetime
 print(json.dumps([{"tag_name": t, "prerelease": t.endswith("-pre") or "alpha" in t, "draft": False,
                    "published_at": "2026-10-%02dT00:00:00Z" % (20 - i,)}
                   for i, t in enumerate(tags)]))'
+        ;;
+    *api.meta.ai/muse-code/channels/*)
+        [[ "${mode}" == "muse-fail" ]] && fail_exit 22
+        [[ "${mode}" == "muse-malformed" ]] && { echo "not json"; exit 0; }
+        [[ "${mode}" == "muse-schema" ]] && { echo '{"version": 7}'; exit 0; }
+        STUB_MUSE_CHANNEL_VERSION="${STUB_MUSE_CHANNEL_VERSION:-}" \
+        STUB_MUSE_MANIFEST_URL="${STUB_MUSE_MANIFEST_URL:-https://stub/manifest.json}" \
+        python3 -c '
+import json, os
+print(json.dumps({
+    "channel": "muse-stable",
+    "version": os.environ["STUB_MUSE_CHANNEL_VERSION"] or os.environ.get("STUB_MUSE_V", "1.4.10-R6427.1"),
+    "manifest_url": os.environ["STUB_MUSE_MANIFEST_URL"],
+}))'
+        ;;
+    *stub/manifest.json*)
+        [[ "${mode}" == "muse-manifest-fail" ]] && fail_exit 22
+        [[ "${mode}" == "muse-manifest-schema" ]] && \
+            { echo '{"checksum_algorithm": "md5", "artifacts": {}}'; exit 0; }
+        STUB_MUSE_ARM_SHA="${STUB_MUSE_ARM_SHA:-2e5afa5e8560c1565185249af2d27b3e97aaf351d3d32275b8e410be702dce35}" \
+        STUB_MUSE_AMD_SHA="${STUB_MUSE_AMD_SHA:-decefc0fb33c48ee43419c3e72ac2dbc781743868611074c7292807f5960dfcf}" \
+        python3 -c '
+import json, os
+print(json.dumps({
+    "checksum_algorithm": "sha256",
+    "artifacts": {
+        "aarch64_linux": {"checksum": os.environ["STUB_MUSE_ARM_SHA"]},
+        "x86_linux": {"checksum": os.environ["STUB_MUSE_AMD_SHA"]},
+    },
+}))'
         ;;
     *auth.docker.io/token*)
         echo '{"token": "stub-token"}'
@@ -270,9 +302,10 @@ case "${cmd}" in
         if [[ -e "${st}/fail_run" ]]; then
             exit 1
         fi
-        printf 'tmux %s\ngh version %s\nopencode %s\ncodex %s\n' \
+        printf 'tmux %s\ngh version %s\nopencode %s\ncodex %s\nmuse %s\n' \
             "${STUB_TMUX_V:-3.4}" "${STUB_GH_V:-2.101.0}" \
-            "${STUB_OC_V:-1.19.0}" "${STUB_CODEX_V:-0.162.1}"
+            "${STUB_OC_V:-1.19.0}" "${STUB_CODEX_V:-0.162.1}" \
+            "${STUB_MUSE_V:-1.4.10-R6427.1}"
         exit 0
         ;;
     *) echo "stub: unknown podman ${cmd}" >&2; exit 3 ;;
@@ -300,13 +333,13 @@ new_case() {
 seed_images() {
     # $1 fixture root; :local tags present with labels matching live pins.
     local root="$1" name h id
-    for name in base opencode codex; do
+    for name in base opencode codex muse; do
         id="img-${name}-0"
         echo "cistella/${name}:local=${id}" >> "${root}/state/ids"
     done
     h="$(sha256sum "${root}/images/cistella/base/pins.sh" | cut -d' ' -f1)"
     echo "img-base-0=${h}" >> "${root}/state/imglabels"
-    for name in opencode codex; do
+    for name in opencode codex muse; do
         h="$(cat "${root}/images/cistella/base/pins.sh" \
             "${root}/images/cistella/$name/pins.sh" | sha256sum | cut -d' ' -f1)"
         echo "img-${name}-0=${h}" >> "${root}/state/imglabels"
@@ -341,7 +374,8 @@ run_refresh() {
 pins_sha() {
     sha256sum "$1/images/cistella/base/pins.sh" \
         "$1/images/cistella/opencode/pins.sh" \
-        "$1/images/cistella/codex/pins.sh" | sha256sum | cut -d' ' -f1
+        "$1/images/cistella/codex/pins.sh" \
+        "$1/images/cistella/muse/pins.sh" | sha256sum | cut -d' ' -f1
 }
 
 current_versions_env() {
@@ -352,7 +386,8 @@ current_versions_env() {
     STUB_GH_V="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${GH_VERSION}" ) )"
     STUB_OC_V="$( ( . "${root}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
     STUB_CODEX_V="$( ( . "${root}/images/cistella/codex/pins.sh" && printf '%s' "${CODEX_VERSION}" ) )"
-    export STUB_TMUX_V STUB_GH_V STUB_OC_V STUB_CODEX_V
+    STUB_MUSE_V="$( ( . "${root}/images/cistella/muse/pins.sh" && printf '%s' "${MUSE_VERSION}" ) )"
+    export STUB_TMUX_V STUB_GH_V STUB_OC_V STUB_CODEX_V STUB_MUSE_V
     STUB_OC_TAG="v${STUB_OC_V}"
     STUB_CODEX_TAGS="rust-v${STUB_CODEX_V}"
     STUB_DEBIAN_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${DEBIAN_IMAGE}" ) | sed -E 's/.*@//')"
@@ -609,6 +644,41 @@ if [[ "${code}" == "0" ]] \
     report ok "rollback-single-target-identity"
 else
     report fail "rollback-single-target-identity" "exit=${code}"
+fi
+
+# 13b. rollback muse target restores only muse; others untouched.
+r="$(new_case rollback-muse)"
+printf 'cistella/base:local=img-base-new\ncistella/opencode:local=img-oc-new\ncistella/codex:local=img-codex-new\ncistella/muse:previous=img-muse-old\ncistella/muse:local=img-muse-new\n' > "${r}/state/ids"
+printf 'img-base-new=h0\nimg-oc-new=h1\nimg-codex-new=h2\nimg-muse-old=h3\nimg-muse-new=h4\n' > "${r}/state/imglabels"
+code="0"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --rollback muse \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" == "0" ]] \
+    && [[ "$(local_id "${r}" 'cistella/muse:local')" == "img-muse-old" ]] \
+    && [[ "$(local_id "${r}" 'cistella/opencode:local')" == "img-oc-new" ]] \
+    && [[ "$(local_id "${r}" 'cistella/codex:local')" == "img-codex-new" ]]; then
+    report ok "rollback-muse-target-identity"
+else
+    report fail "rollback-muse-target-identity" "exit=${code}"
+fi
+
+# 13c. rollback muse without :previous hits the preflight (not the
+#     parser): exit 2 naming the missing tag set, nothing changed.
+r="$(new_case rollback-muse-missing)"
+printf 'cistella/muse:local=img-muse-new\n' > "${r}/state/ids"
+printf 'img-muse-new=h4\n' > "${r}/state/imglabels"
+before_tags="$(sort "${r}/state/ids" | sha256sum)"
+code="0"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --rollback muse \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_tags="$(sort "${r}/state/ids" | sha256sum)"
+if [[ "${code}" == "2" && "${before_tags}" == "${after_tags}" ]] \
+    && grep -q "missing :previous" "${r}/stderr"; then
+    report ok "rollback-muse-missing-preflight"
+else
+    report fail "rollback-muse-missing-preflight" "exit=${code}"
 fi
 
 # 14. check with no upstream drift but missing labels -> 1, read-only:
@@ -1012,7 +1082,148 @@ else
     report fail "codex-malformed-recovers-on-retry" "exit=${code} calls=${calls} seq=${first_two}"
 fi
 
-# 36. schema-corrupt pages never read as clean no-match: persistent
+# 36. (muse track cases follow the codex block)
+
+# 36a. muse drift: channel serves a newer version with new checksums ->
+#      exit 1 with a drift line; pins untouched (check never mutates;
+#      the apply case below proves the bump path).
+r="$(new_case muse-drift)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+    STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
+    && grep -q "muse MUSE_VERSION 1.4.10-R6427.1 -> 1.5.0-R100.1" "${r}/stdout"; then
+    report ok "muse-drift-reported"
+else
+    report fail "muse-drift-reported" "exit=${code}"
+fi
+
+# 36b. muse apply converges: drifted pins rebuild only the muse image,
+#      then a follow-up check is clean (labels match pins).
+r="$(new_case muse-apply)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+    STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+code2="0"
+CURL_MODE=ok STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+    STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+if [[ "${code}" == "0" && "${code2}" == "0" ]] \
+    && grep -q '^build cistella/muse:local' "${r}/state/buildlog" \
+    && ! grep -q '^build cistella/codex:local' "${r}/state/buildlog"; then
+    # shellcheck disable=SC1091
+    got_muse_v="$( ( . "${r}/images/cistella/muse/pins.sh" && printf '%s' "${MUSE_VERSION}" ) )"
+    if [[ "${got_muse_v}" == "1.5.0-R100.1" ]]; then
+        report ok "muse-apply-rebuilds-targeted"
+    else
+        report fail "muse-apply-rebuilds-targeted" "v=${got_muse_v}"
+    fi
+else
+    report fail "muse-apply-rebuilds-targeted" "exit=${code}/${code2}"
+fi
+
+# 36b2. late muse build failure -> 2 with exact restoration: opencode
+#      drift rebuilds first (build 1 succeeds), muse build (build 2)
+#      fails; all pin bytes and :local IDs restored, :previous kept.
+r="$(new_case muse-late-build-fail)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_base_id="$(local_id "${r}" 'cistella/base:local')"
+before_oc_id="$(local_id "${r}" 'cistella/opencode:local')"
+before_cx_id="$(local_id "${r}" 'cistella/codex:local')"
+before_mu_id="$(local_id "${r}" 'cistella/muse:local')"
+echo 2 > "${r}/state/fail_build_n"
+code="0"
+CURL_MODE=ok STUB_OC_TAG="v9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+    STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    STUB_MUSE_V="1.5.0-R100.1" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+: > "${r}/state/fail_build_n"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" \
+    && "$(local_id "${r}" 'cistella/base:local')" == "${before_base_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:local')" == "${before_oc_id}" \
+    && "$(local_id "${r}" 'cistella/codex:local')" == "${before_cx_id}" \
+    && "$(local_id "${r}" 'cistella/muse:local')" == "${before_mu_id}" \
+    && "$(local_id "${r}" 'cistella/muse:previous')" == "${before_mu_id}" ]]; then
+    report ok "muse-late-build-fail-restores-ids"
+else
+    report fail "muse-late-build-fail-restores-ids" "exit=${code}"
+fi
+
+# 36b3. validation failure after muse retag -> 2 with exact restoration:
+#      covers the whole new mutation path (pins, preserve, rebuild,
+#      validate) for the muse track.
+r="$(new_case muse-validate-fail)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_mu_id="$(local_id "${r}" 'cistella/muse:local')"
+before_oc_id="$(local_id "${r}" 'cistella/opencode:local')"
+touch "${r}/state/fail_run"
+code="0"
+CURL_MODE=ok STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+    STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    STUB_MUSE_V="1.5.0-R100.1" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+rm -f "${r}/state/fail_run"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" \
+    && "$(local_id "${r}" 'cistella/muse:local')" == "${before_mu_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:local')" == "${before_oc_id}" ]]; then
+    report ok "muse-validate-fail-restores-ids"
+else
+    report fail "muse-validate-fail-restores-ids" "exit=${code}"
+fi
+
+# 36c-g. muse discovery failures -> 2, pins byte-identical.
+for mode in muse-fail muse-malformed muse-schema muse-manifest-fail muse-manifest-schema; do
+    r="$(new_case "muse-err-${mode}")"
+    seed_images "${r}"
+    current_versions_env "${r}"
+    before_pins="$(pins_sha "${r}")"
+    code="0"
+    CURL_MODE="${mode}" STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
+        STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        STUB_MUSE_AMD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+        PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+        >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+    after_pins="$(pins_sha "${r}")"
+    if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" ]]; then
+        report ok "muse-err-${mode}"
+    else
+        report fail "muse-err-${mode}" "exit=${code}"
+    fi
+done
+
+# 37. schema-corrupt pages never read as clean no-match: persistent
 #     `[{}]` responses retry 3x then skip (exit 1, pins frozen). Under
 #     the old conflation this walked 10 clean pages to deterministic 2.
 r="$(new_case codex-schema-skip)"
