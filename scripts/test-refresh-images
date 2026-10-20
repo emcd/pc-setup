@@ -1189,11 +1189,15 @@ CURL_MODE=ok STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 after_pins="$(pins_sha "${r}")"
+# The expected drift line names the version currently pinned, which moves
+# with every channel bump: read it from the fixture instead of hardcoding it.
+# shellcheck disable=SC1091
+want_muse="$( ( . "${r}/images/cistella/muse/pins.sh" && printf '%s' "${MUSE_VERSION}" ) )"
 if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
-    && grep -q "muse MUSE_VERSION 1.4.10-R6427.1 -> 1.5.0-R100.1" "${r}/stdout"; then
+    && grep -q "muse MUSE_VERSION ${want_muse} -> 1.5.0-R100.1" "${r}/stdout"; then
     report ok "muse-drift-reported"
 else
-    report fail "muse-drift-reported" "exit=${code}"
+    report fail "muse-drift-reported" "exit=${code} want_muse=${want_muse}"
 fi
 
 # 36b. muse apply converges: drifted pins rebuild only the muse image,
