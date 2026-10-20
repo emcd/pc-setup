@@ -95,9 +95,36 @@ case "${mode}" in
         ;;
 esac
 case "${url}" in
-    *api.github.com/repos/anomalyco/opencode*)
+    *registry.npmjs.org/@opencode%2fcli-linux-*)
+        # Per-platform version document: the registry document for the
+        # platform package, which carries the tarball URL. The requested
+        # platform is echoed back so the two platforms differ.
+        [[ "${mode}" == "npm-platform-fail" ]] && fail_exit 22
+        [[ "${mode}" == "npm-platform-schema" ]] && { echo '{"version": "1.0.0"}'; exit 0; }
+        oc_pkg="$(printf '%s' "${url}" | sed -E 's#.*%2f([^/]+)/.*#\1#')"
+        STUB_OC_PKG="${oc_pkg}" STUB_OC_VERSION="${STUB_OC_VERSION:-2.0.32}" python3 -c '
+import json, os
+v = os.environ["STUB_OC_VERSION"]
+pkg = os.environ["STUB_OC_PKG"]
+print(json.dumps({
+    "name": "@opencode/" + pkg,
+    "version": v,
+    "dist": {"tarball": "https://registry.npmjs.org/@opencode/%s/-/%s-%s.tgz" % (pkg, pkg, v)},
+}))'
+        ;;
+    *registry.npmjs.org/@opencode%2fcli)
+        # Channel document: the meta package's dist-tags.
+        [[ "${mode}" == "npm-channel-fail" ]] && fail_exit 22
         [[ "${mode}" == "malformed" ]] && { echo "not json"; exit 0; }
-        echo "{\"tag_name\": \"${STUB_OC_TAG:-v1.19.0}\"}"
+        [[ "${mode}" == "npm-channel-schema" ]] && { echo '{"dist-tags": {}}'; exit 0; }
+        STUB_OC_VERSION="${STUB_OC_VERSION:-2.0.32}" python3 -c '
+import json, os
+print(json.dumps({"name": "@opencode/cli", "dist-tags": {"latest": os.environ["STUB_OC_VERSION"]}}))'
+        ;;
+    *registry.npmjs.org/@opencode/cli-linux-*.tgz)
+        [[ "${mode}" == "npm-tarball-fail" ]] && fail_exit 22
+        [[ -n "${out}" ]] || fail_exit 26
+        printf 'fake-tarball-bytes-for-%s' "${url##*/}" > "${out}"
         ;;
     *api.github.com/repos/openai/codex*)
         [[ "${mode}" == "malformed" ]] && { echo "not json"; exit 0; }
@@ -360,7 +387,7 @@ run_refresh() {
         XDG_RUNTIME_DIR="${root}" \
         CURL_MODE="${CURL_MODE:-ok}" \
         PODMAN_STATE="${root}/state" \
-        STUB_OC_TAG="${STUB_OC_TAG:-}" \
+        STUB_OC_VERSION="${STUB_OC_VERSION:-}" \
         STUB_CODEX_TAGS="${STUB_CODEX_TAGS:-}" \
         STUB_DEBIAN_DIGEST="${STUB_DEBIAN_DIGEST:-}" \
         STUB_RUST_DIGEST="${STUB_RUST_DIGEST:-}" \
@@ -388,11 +415,11 @@ current_versions_env() {
     STUB_CODEX_V="$( ( . "${root}/images/cistella/codex/pins.sh" && printf '%s' "${CODEX_VERSION}" ) )"
     STUB_MUSE_V="$( ( . "${root}/images/cistella/muse/pins.sh" && printf '%s' "${MUSE_VERSION}" ) )"
     export STUB_TMUX_V STUB_GH_V STUB_OC_V STUB_CODEX_V STUB_MUSE_V
-    STUB_OC_TAG="v${STUB_OC_V}"
+    STUB_OC_VERSION="${STUB_OC_V}"
     STUB_CODEX_TAGS="rust-v${STUB_CODEX_V}"
     STUB_DEBIAN_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${DEBIAN_IMAGE}" ) | sed -E 's/.*@//')"
     STUB_RUST_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${RUST_IMAGE}" ) | sed -E 's/.*@//')"
-    export STUB_OC_TAG STUB_CODEX_TAGS STUB_DEBIAN_DIGEST STUB_RUST_DIGEST
+    export STUB_OC_VERSION STUB_CODEX_TAGS STUB_DEBIAN_DIGEST STUB_RUST_DIGEST
     local pair dist var key val
     for pair in "emcd-agents:EMCD_AGENTS_VERSION" "hatch:HATCH_VERSION" "pre-commit:PRE_COMMIT_VERSION" "copier:COPIER_VERSION" "agentmux:AGENTMUX_VERSION" "nbspec:NBSPEC_VERSION" "nb-mcp-server:NB_MCP_VERSION" "linecheck:LINECHECK_VERSION"; do
         dist="${pair%%:*}"; var="${pair##*:}"
@@ -435,7 +462,7 @@ seed_images "${r}"
 current_versions_env "${r}"
 before="$(pins_sha "${r}")"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
@@ -460,13 +487,76 @@ for mode in http-fail malformed empty-codex registry-fail; do
         || report fail "check-err-${mode}" "exit=${code}"
 done
 
+# 6b. npm channel failures -> 2. The channel document is read on every
+#     run, so these are reached with the pinned version.
+for mode in npm-channel-fail npm-channel-schema; do
+    r="$(new_case "err-${mode}")"
+    seed_images "${r}"
+    current_versions_env "${r}"
+    code="0"
+    CURL_MODE="${mode}" \
+        PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+        PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+        >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+    [[ "${code}" == "2" ]] && report ok "check-err-${mode}" \
+        || report fail "check-err-${mode}" "exit=${code}"
+done
+
+# 6c. npm platform and tarball failures -> 2. These are only reached
+#     once the channel reports a version other than the pin, so the
+#     channel is driven to a newer version.
+for mode in npm-platform-fail npm-platform-schema npm-tarball-fail; do
+    r="$(new_case "err-${mode}")"
+    seed_images "${r}"
+    current_versions_env "${r}"
+    before="$(pins_sha "${r}")"
+    code="0"
+    CURL_MODE="${mode}" STUB_OC_VERSION="9.99.0" \
+        PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+        PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+        >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+    after="$(pins_sha "${r}")"
+    if [[ "${code}" == "2" && "${before}" == "${after}" ]]; then
+        report ok "check-err-${mode}"
+    else
+        report fail "check-err-${mode}" \
+            "exit=${code} pins_changed=$([[ "${before}" != "${after}" ]] && echo yes || echo no)"
+    fi
+done
+
+# 6d. apply pins the npm channel version and the per-arch shas of the
+#     npm platform tarballs, proving the registry path (not a GitHub
+#     release asset) feeds the checksum pins.
+r="$(new_case npm-apply-pins)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+# shellcheck disable=SC1091
+got_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+# shellcheck disable=SC1091
+got_arm="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+# shellcheck disable=SC1091
+got_amd="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_SHA256_AMD64}" ) )"
+want_arm="$(printf 'fake-tarball-bytes-for-cli-linux-arm64-9.99.0.tgz' | sha256sum | cut -d' ' -f1)"
+want_amd="$(printf 'fake-tarball-bytes-for-cli-linux-x64-9.99.0.tgz' | sha256sum | cut -d' ' -f1)"
+if [[ "${code}" == "0" && "${got_oc}" == "9.99.0" \
+    && "${got_arm}" == "${want_arm}" && "${got_amd}" == "${want_amd}" ]]; then
+    report ok "apply-npm-channel-pins"
+else
+    report fail "apply-npm-channel-pins" "exit=${code} oc=${got_oc} arm=${got_arm} amd=${got_amd}"
+fi
+
 # 7. late codex flake in apply -> codex track skipped, opencode drift
 #     still applied and rebuilt; codex pins frozen; exit 0.
 r="$(new_case late-fail)"
 seed_images "${r}"
 current_versions_env "${r}"
 code="0"
-CURL_MODE="late-codex-fail" STUB_OC_TAG="v9.99.0" \
+CURL_MODE="late-codex-fail" STUB_OC_VERSION="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
@@ -496,7 +586,7 @@ before_oc_id="$(local_id "${r}" 'cistella/opencode:local')"
 before_codex_id="$(local_id "${r}" 'cistella/codex:local')"
 echo 2 > "${r}/state/fail_build_n"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
@@ -518,7 +608,7 @@ fi
 # 8b. validation failure after successful retags -> 2, IDs + pins restored.
 touch "${r}/state/fail_run"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
@@ -539,7 +629,7 @@ fi
 #    no-build no-op.
 : > "${r}/state/fail_build_n"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
@@ -559,7 +649,7 @@ for name in base opencode codex; do
 done
 builds_before="$(grep -c '^build ' "${r}/state/buildlog")"
 code2="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_CODEX_V="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
@@ -580,7 +670,7 @@ sed -i -E 's/^OPENCODE_VERSION=.*/OPENCODE_VERSION=9.99.0/' \
     "${r}/images/cistella/opencode/pins.sh"
 : > "${r}/state/buildlog"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
@@ -601,7 +691,7 @@ flock -x "${r}/pc-setup-refresh-images.lock" sleep 4 &
 holder=$!
 sleep 0.5
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
@@ -1152,7 +1242,7 @@ before_cx_id="$(local_id "${r}" 'cistella/codex:local')"
 before_mu_id="$(local_id "${r}" 'cistella/muse:local')"
 echo 2 > "${r}/state/fail_build_n"
 code="0"
-CURL_MODE=ok STUB_OC_TAG="v9.99.0" \
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="9.99.0" STUB_MUSE_CHANNEL_VERSION="1.5.0-R100.1" \
     STUB_MUSE_ARM_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \

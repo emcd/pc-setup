@@ -8,6 +8,11 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
+# OpenCode 2 ships as npm platform packages, not GitHub release assets:
+# the upstream project tags V2 without publishing release objects, so the
+# registry is the only pinnable artifact source. Each platform package
+# contains one native binary at package/bin/opencode and declares no
+# install script, so nothing executes at build time.
 ARG TARGETARCH
 ARG OPENCODE_VERSION
 ARG OPENCODE_SHA256_ARM64
@@ -15,16 +20,17 @@ ARG OPENCODE_SHA256_AMD64
 RUN set -eu \
     && mkdir --parents /opt/harness \
     && case "${TARGETARCH}" in \
-         arm64) oc_plat=linux-arm64; oc_sha="${OPENCODE_SHA256_ARM64}" ;; \
-         amd64) oc_plat=linux-x64; oc_sha="${OPENCODE_SHA256_AMD64}" ;; \
+         arm64) oc_pkg=cli-linux-arm64; oc_sha="${OPENCODE_SHA256_ARM64}" ;; \
+         amd64) oc_pkg=cli-linux-x64; oc_sha="${OPENCODE_SHA256_AMD64}" ;; \
          *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
        esac \
-    && curl --fail --location --show-error --silent --output /tmp/opencode.tar.gz \
-         "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-${oc_plat}.tar.gz" \
-    && echo "${oc_sha}  /tmp/opencode.tar.gz" | sha256sum --check --strict \
-    && tar --extract --gzip --file /tmp/opencode.tar.gz --directory /opt/harness \
+    && curl --fail --location --show-error --silent --output /tmp/opencode.tgz \
+         "https://registry.npmjs.org/@opencode/${oc_pkg}/-/${oc_pkg}-${OPENCODE_VERSION}.tgz" \
+    && echo "${oc_sha}  /tmp/opencode.tgz" | sha256sum --check --strict \
+    && tar --extract --gzip --file /tmp/opencode.tgz --directory /opt/harness \
+         --strip-components=2 package/bin/opencode \
     && chmod +x /opt/harness/opencode \
-    && rm /tmp/opencode.tar.gz
+    && rm /tmp/opencode.tgz
 
 FROM localhost/cistella/base:local
 COPY --from=fetch /opt/harness/opencode /usr/local/bin/opencode

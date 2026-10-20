@@ -3,8 +3,9 @@
 # Refresh PC Setup's production container images.
 #
 # Policy (todos/images/1): detect upstream drift for the auto-tracked pins
-# (OpenCode/Codex releases on GitHub, Debian/Rust base digests, PyPI
-# distributions, crates.io crates), then on --apply: snapshot pins, bump
+# (OpenCode and Muse from their own channels, Codex releases on GitHub,
+# Debian/Rust base digests, PyPI distributions, crates.io crates), then on
+# --apply: snapshot pins, bump
 # them, preserve :previous tags, rebuild stale images with --no-cache in
 # base -> harness order, validate, and leave rollout to the operator.
 #
@@ -84,6 +85,8 @@ xcurl() {
     curl --fail --silent --show-error "$@" || die2 "request failed (curl exit $?)"
 }
 
+USER_AGENT="pc-setup-refresh-images/1 (local maintenance script)"
+
 # GitHub API goes through `gh` (installed by ubuntu.bash, authed via its
 # own credential store): no exported tokens, authed rate limits, and one
 # fewer credential to manage for timer use. Returns nonzero instead of
@@ -99,15 +102,44 @@ github_api() {
 # does not propagate through nested $(), so every fallible capture has
 # an explicit handler outside its own substitution.
 
-latest_opencode_tag() {
-    local _outvar="$1" _json _tag
-    _json="$(github_api "https://api.github.com/repos/anomalyco/opencode/releases/latest")" \
-        || return 1
-    _tag="$(printf '%s' "${_json}" \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')" \
-        || return 1
-    [[ "${_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-    printf -v "${_outvar}" '%s' "${_tag}"
+latest_opencode_version() {
+    # OpenCode 2 is published as npm packages. The upstream project tags
+    # V2 but publishes no release objects or release assets, so the npm
+    # registry is the only pinnable artifact source. The channel version
+    # is the meta package's `latest` dist-tag; the other dist-tags are
+    # snapshots and are not tracked.
+    local _outvar="$1" _json _ver
+    _json="$(xcurl --max-time 30 --user-agent "${USER_AGENT}" \
+        "https://registry.npmjs.org/@opencode%2fcli")" || return 1
+    _ver="$(printf '%s' "${_json}" | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+tags = d.get("dist-tags") if isinstance(d, dict) else None
+v = tags.get("latest") if isinstance(tags, dict) else None
+if not isinstance(v, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", v):
+    raise SystemExit("bad latest dist-tag")
+print(v)
+')" || return 1
+    printf -v "${_outvar}" '%s' "${_ver}"
+}
+
+opencode_platform_tarball() {
+    # $1 = outvar, $2 = version, $3 = platform package name.
+    local _outvar="$1" _version="$2" _pkg="$3" _json _url
+    _json="$(xcurl --max-time 30 --user-agent "${USER_AGENT}" \
+        "https://registry.npmjs.org/@opencode%2f${_pkg}/${_version}")" || return 1
+    _url="$(printf '%s' "${_json}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if not isinstance(d, dict):
+    raise SystemExit("malformed registry document")
+dist = d.get("dist")
+url = dist.get("tarball") if isinstance(dist, dict) else None
+if not isinstance(url, str) or not url.startswith("https://registry.npmjs.org/"):
+    raise SystemExit("bad tarball url")
+print(url)
+')" || return 1
+    printf -v "${_outvar}" '%s' "${_url}"
 }
 
 latest_codex_rust_tag() {
@@ -251,20 +283,21 @@ note_drift() {
 }
 
 discover_opencode() {
-    local current tag version url sha
+    local current version url sha pkg
     pin_value "${snap_opencode}" OPENCODE_VERSION current \
         || die2 "cannot read OPENCODE_VERSION"
-    latest_opencode_tag tag || die2 "opencode release lookup failed"
-    version="${tag#v}"
+    latest_opencode_version version || die2 "opencode npm channel lookup failed"
     [[ "${version}" == "${current}" ]] && return 0
     for plat in arm64 amd64; do
         if [[ "${plat}" == "arm64" ]]; then
-            url="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-arm64.tar.gz"
+            pkg="cli-linux-arm64"
         else
-            url="https://github.com/anomalyco/opencode/releases/download/${tag}/opencode-linux-x64.tar.gz"
+            pkg="cli-linux-x64"
         fi
-        xcurl --max-time 120 --location --output "${workdir}/opencode-${plat}.tar.gz" "${url}"
-        sha="$(sha256sum "${workdir}/opencode-${plat}.tar.gz" | cut -d' ' -f1)"
+        opencode_platform_tarball url "${version}" "${pkg}" \
+            || die2 "opencode platform package lookup failed for ${pkg} ${version}"
+        xcurl --max-time 300 --location --output "${workdir}/opencode-${plat}.tgz" "${url}"
+        sha="$(sha256sum "${workdir}/opencode-${plat}.tgz" | cut -d' ' -f1)"
         [[ "${sha}" =~ ^[0-9a-f]{64}$ ]] || die2 "bad sha for opencode ${plat} tarball"
         if [[ "${plat}" == "arm64" ]]; then
             want_pin "${opencode_pins}" OPENCODE_SHA256_ARM64 "${sha}"
@@ -444,8 +477,6 @@ done
 # comparison anywhere.
 
 HOLD_VARS=" PRE_COMMIT_VERSION "
-
-USER_AGENT="pc-setup-refresh-images/1 (local maintenance script)"
 
 is_held() {
     [[ "${HOLD_VARS}" == *" $1 "* ]]

@@ -22,7 +22,9 @@ Configuration and maintenance workspace for PC installations.
 ## Image Refresh
 
 `scripts/refresh-images` owns the refresh policy (`todos/images/1`):
-auto-tracked pins are OpenCode/Codex GitHub releases, the Muse
+auto-tracked pins are the OpenCode npm channel (the `latest` dist-tag of
+`@opencode/cli`, with each platform tarball resolved from the npm
+registry and hashed), Codex GitHub releases, the Muse
 `muse-stable` channel (version plus manifest checksums; nothing is
 pulled to check), Debian/Rust base digests (remote manifest lookup;
 nothing is pulled to check), PyPI distributions (`emcd-agents`,
