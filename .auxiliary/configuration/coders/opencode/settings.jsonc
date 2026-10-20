@@ -189,5 +189,13 @@
     "pyright": {
       "disabled": true
     }
-  }
+  },
+
+  // V2 allows access outside the project worktree by default; V1 always
+  // asked. This rule restores the V1 posture. It is native V2 syntax
+  // because V1 had no equivalent key, and it merges with the V1
+  // "permission" map above rather than replacing it.
+  "permissions": [
+    { "action": "external_directory", "resource": "*", "effect": "ask" }
+  ]
 }
