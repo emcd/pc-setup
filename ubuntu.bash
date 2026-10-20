@@ -151,7 +151,6 @@ EOF
 sudo sysctl -p /etc/sysctl.d/99-inotify.conf
 
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-agent-harnesses"
-bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-opencode-shared-service"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-terminal-font-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/deploy-agentmux-host-config"
 bash "$(dirname "${BASH_SOURCE[0]}")/scripts/install-ghostty"

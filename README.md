@@ -102,46 +102,31 @@ GH_CONFIG_DIR="${HOME}/.config/cistella/in-container/gh" \
 
 Then `chmod 600 "${HOME}/.config/cistella/in-container/gh/hosts.yml"`.
 
-## OpenCode Shared Service
+## OpenCode Service Topology
 
 OpenCode 2 runs a shared background server that binds loopback and
-registers itself in `~/.local/state/opencode/service.json`. The Cistella
-seats share that state directory, so they read the registration and try
-to connect to it, but a container's loopback is its own: a seat can never
-reach a loopback-bound service. The seat therefore needs the service on
-an address a container can reach.
+registers itself in `~/.local/state/opencode/service.json`. Clients
+discover it there and connect.
 
-`opencode-shared.service` (user unit, `configuration/systemd/user/`)
-supervises the service on the host's LAN address -- the address podman
-hands a container as `host.containers.internal`. The address is
-DHCP-assigned, so the supervisor resolves it at start and rebinds if the
-lease changes. The port is deliberately not OpenCode's default: a
-CLI-managed service may already hold the default port, and two services
-must never contend for one port, because the second to register displaces
-the first and the first shuts itself down.
+The host does not run that server as a unit. The first host session
+starts it, so the service inherits the session's environment -- which
+matters, because the server launches each project's MCP servers as
+child processes and needs node, npx, python3, `agentmux` and `nb-mcp` on
+its PATH. A unit would have to mirror the interactive PATH by hand, and
+a stale copy fails in a way that looks like a broken MCP server rather
+than a misconfigured service.
 
-The supervisor is a host-runtime script, so it is installed to
-`~/.local/bin/opencode-shared-service` rather than referenced from a
-checkout that can move. `scripts/install-opencode-shared-service`
-installs both it and the unit, and `ubuntu.bash` runs that installer.
-
-```bash
-systemctl --user start opencode-shared.service
-systemctl --user status opencode-shared.service
-cat ~/.local/state/opencode/service.json   # url, port, password
-```
-
-The server launches each project's MCP servers as child processes, so
-the unit carries the same PATH the interactive shell has: mise shims for
-node, npx and python3, `~/.cargo/bin` for agentmux and nb-mcp, and the
-npm prefix for opencode and the other harness CLIs. Without it the
-server starts fine but every MCP server fails to spawn.
-
-Clients in a container then discover the routable URL and password from
-the shared registration and connect to the host's single server, so the
-host and every seat share one server, one session database, and one set
-of credentials. The service is password-gated; the password lives only
-in the state directory, which the seats read but nothing else can.
+The Cistella seats do **not** use the host's server. A seat that
+attaches to a shared server runs its tools on the host, outside the
+container's podman and landlock confinement, and gets no MCP servers of
+its own inside the container: the server owns tool execution and spawns
+the MCP servers as its own children. The containerized coder commands
+therefore run `opencode --standalone`, so the seat's session owns a
+server inside the container (`serve --stdio --port 0`, which registers
+nothing and binds no port). The seat's MCP servers become children of
+the seat's session, its tools run inside the container, and the host's
+service is never displaced. The seat still shares the session database,
+credentials and configuration through the profile's mounts.
 
 ## Terminal Fonts
 

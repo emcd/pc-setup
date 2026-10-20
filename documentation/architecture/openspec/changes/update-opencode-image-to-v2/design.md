@@ -72,6 +72,24 @@ different Opencode configuration layout; deciding anything about the
   reads the same project-root `opencode.json(c)` the previous version
   read, and the seat mounts the host's OpenCode config, so no
   configuration change is required for the image to work.
+- **The seat runs its own server, not the host's.** OpenCode 2's shared
+  server owns tool execution and spawns each project's MCP servers as
+  its own children. A seat that attaches to the host's server therefore
+  runs its tools on the host, outside the container's podman and landlock
+  confinement, and gets no MCP servers inside the container. The
+  containerized coder commands run `opencode --standalone`, so the
+  seat's session owns a server inside the container and its MCP servers
+  and tools stay inside it. The seat's server registers nothing and
+  binds no port, so it never displaces the host's service. The seat
+  still shares the session database, credentials and configuration
+  through the profile's mounts, so there is one session list and one
+  credential set across the host and the seats.
+- **The host does not run the shared server as a unit.** The first host
+  session starts it, so the service inherits the session's environment.
+  The server launches MCP servers as child processes and needs node,
+  npx, python3, agentmux and nb-mcp on its PATH; a unit would have to
+  mirror the interactive PATH by hand, and a stale copy fails as broken
+  MCP servers rather than as a misconfigured service.
 
 ## Risks / Trade-offs
 
@@ -88,6 +106,12 @@ different Opencode configuration layout; deciding anything about the
   image lands.
 - [A track failure now hits a different endpoint than before] → Same
   fail-closed behavior: discovery errors exit 2 with pins untouched.
+- [V2 splits the transcript store] → New messages go to a
+  `session_message` table with the content inline; the migrated V1
+  transcripts stay in the `message` and `part` tables. The transcript
+  scraper reads the V1 tables, so it still covers the pre-migration
+  sessions and returns nothing for sessions created under V2. Recorded
+  in the scraper's docstring.
 
 ## Migration Plan
 
