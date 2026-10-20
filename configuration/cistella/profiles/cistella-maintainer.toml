@@ -1,7 +1,6 @@
 # Cistella Maintainer: Privileged seat for Cistella development
 
 image = 'cistella/opencode:local'
-credential-surface = { ssh_agent = '/run/user/1000/keyring/ssh' }
 container-home = '{{environment:HOME}}'
 command = ['opencode']
 environment-acceptances = [
@@ -15,14 +14,24 @@ name = 'podman'
 [[extensions]]
 name = 'landlock'
 
+[[extensions]]
+name = 'ssh'
+
+[[extensions]]
+name = 'tmpdir'
+
 [environment-assignments]
+    # The project symlinks .opencode to a tracked directory, so the file
+    # watcher's inotify subscription fails and the server retries the
+    # location, re-initializing the MCP servers each time without reaping
+    # the previous set. With the watcher off, config changes need an
+    # explicit 'opencode reload'.
+    OPENCODE_DISABLE_FILEWATCHER = '1'
 AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
-BUN_TMPDIR = '/tmp/scratch'
 CARGO_HOME = '{{core:container-home}}/.cargo'
 EDITOR = 'nano'
 GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
 PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-TMPDIR = '/tmp/scratch'
 TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
 
 ## Container State (in-container taxonomy)
@@ -109,6 +118,13 @@ mode = 'rw'
 host-source = '~/.local/state/opencode'
 container-target = '{{core:container-home}}/.local/state/opencode'
 mode = 'rw'
+
+## Systemd User Units (RO for privileged seats)
+
+[[mounts]]
+host-source = '~/.config/systemd/user'
+container-target = '{{core:container-home}}/.config/systemd/user'
+mode = 'ro'
 
 ## Third-Party Configurations
 

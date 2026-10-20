@@ -1,0 +1,123 @@
+# Muse Code: Standard agent seat
+
+image = 'cistella/muse:local'
+container-home = '{{environment:HOME}}'
+command = ['muse']
+environment-acceptances = [
+  'AGENTMUX_BUNDLE',
+  'AGENTMUX_SESSION',
+]
+
+[isolator]
+name = 'podman'
+
+[[extensions]]
+name = 'landlock'
+
+[[extensions]]
+name = 'ssh'
+
+[[extensions]]
+name = 'tmpdir'
+
+[environment-assignments]
+AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
+AGENTMUX_STATE_DIRECTORY = '{{core:container-home}}/.local/state/agentmux'
+CARGO_HOME = '{{core:container-home}}/.cargo'
+MUSE_NO_AUTO_UPDATE = '1'
+EDITOR = 'nano'
+GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
+PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
+
+## Container State (in-container taxonomy)
+
+[[mounts]]
+host-source = '~/.config/cistella/in-container'
+container-target = '{{core:container-home}}/.config'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/share/cistella/in-container'
+container-target = '{{core:container-home}}/.local/share'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/state/cistella/in-container'
+container-target = '{{core:container-home}}/.local/state'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.cache/cistella/in-container'
+container-target = '{{core:container-home}}/.cache'
+mode = 'rw'
+
+## Tool State (home-level, outside standard ~/type)
+
+[[mounts]]
+host-source = '~/.cargo'
+container-target = '{{core:container-home}}/.cargo'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.npm'
+container-target = '{{core:container-home}}/.npm'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.rustup'
+container-target = '{{core:container-home}}/.rustup'
+mode = 'ro'
+
+## Agentmux (shared host config/state)
+
+[[mounts]]
+host-source = '~/.config/agentmux'
+container-target = '{{core:container-home}}/.config/agentmux'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.local/state/agentmux'
+container-target = '{{core:container-home}}/.local/state/agentmux'
+mode = 'rw'
+
+## Harness (shared host config/state)
+
+[[mounts]]
+host-source = '~/.config/muse'
+container-target = '{{core:container-home}}/.config/muse'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.local/share/muse'
+container-target = '{{core:container-home}}/.local/share/muse'
+mode = 'rw'
+
+## Third-Party Configurations
+
+[[mounts]]
+host-source = '~/.gitconfig'
+container-target = '{{core:container-home}}/.gitconfig'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.nbrc'
+container-target = '{{core:container-home}}/.nbrc'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/.ssh'
+container-target = '{{core:container-home}}/.ssh'
+mode = 'ro'
+
+## Collections
+
+[[mounts]]
+host-source = '~/src'
+container-target = '{{core:container-home}}/src'
+mode = 'ro'
+
+[[mounts]]
+host-source = '~/Dropbox/Notes'
+container-target = '{{core:container-home}}/Dropbox/Notes'
+mode = 'rw'

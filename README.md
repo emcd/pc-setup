@@ -108,13 +108,11 @@ OpenCode 2 runs a shared background server that binds loopback and
 registers itself in `~/.local/state/opencode/service.json`. Clients
 discover it there and connect.
 
-The host does not run that server as a unit. The first host session
-starts it, so the service inherits the session's environment -- which
-matters, because the server launches each project's MCP servers as
-child processes and needs node, npx, python3, `agentmux` and `nb-mcp` on
-its PATH. A unit would have to mirror the interactive PATH by hand, and
-a stale copy fails in a way that looks like a broken MCP server rather
-than a misconfigured service.
+The host's own `opencode` coder runs `opencode --standalone`, so a host
+session owns its server too. That server inherits the pane's environment,
+which matters because it launches each project's MCP servers as child
+processes and needs node, npx, python3, `agentmux` and `nb-mcp` on its
+PATH.
 
 The Cistella seats do **not** use the host's server. A seat that
 attaches to a shared server runs its tools on the host, outside the
@@ -127,6 +125,27 @@ nothing and binds no port). The seat's MCP servers become children of
 the seat's session, its tools run inside the container, and the host's
 service is never displaced. The seat still shares the session database,
 credentials and configuration through the profile's mounts.
+
+### The seat file watcher is disabled
+
+The seat profiles set `OPENCODE_DISABLE_FILEWATCHER = '1'`. The projects
+symlink `.opencode` to a tracked directory, so OpenCode's inotify
+subscription fails with `ENOTDIR`, the server retries the location, and
+every retry re-initializes the MCP servers. OpenCode does not reap MCP
+servers across a reload, so a seat accumulates duplicate sets (about
+150 MiB each) and the log fills with failed subscriptions.
+
+With the watcher off, **a configuration change needs an explicit
+`opencode reload`** to take effect. That is a deliberate trade: the real
+fix belongs upstream (reap MCP servers across a reload, and watch
+through symlinked directories).
+
+The variable belongs in the Cistella profile's `[environment-assignments]`,
+not in the coder command's argv: Cistella execs the harness argv
+verbatim (`execvp(argv[0], ...)`), and podman has no `KEY=VALUE command`
+prefix form, so an argv prefix would be resolved as a program name and
+the harness would not start. A tmux-run host command has no such
+problem, because tmux runs it through a shell.
 
 ## Terminal Fonts
 

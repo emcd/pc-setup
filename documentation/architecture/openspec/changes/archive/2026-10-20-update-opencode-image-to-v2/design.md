@@ -52,10 +52,15 @@ different Opencode configuration layout; deciding anything about the
   Containerfile verification is `sha256sum --check --strict`. Keeping that
   format means the pin contract and the build-time check do not change.
   The registry's own `dist.integrity` is sha512-base64; adopting it
-  would rename the pin fields and change the verification code for no
-  trust gain, because the registry's integrity value is not signed
-  either. Downloading during discovery has a second benefit: a pin is
-  only written after the exact artifact has been fetched successfully.
+  would rename the pin fields and change the verification code. It
+  would buy one check this approach does not have: `dist.integrity`
+  would catch a mismatch between the bytes a registry serves and the
+  document that describes them, whereas download-and-hash pins and
+  accepts whatever was served. The trade is therefore format uniformity
+  and an unchanged verification path, against that cross-check. Both
+  values are unsigned, so neither is a signed attestation. Downloading
+  during discovery has a second benefit: a pin is only written after the
+  exact artifact has been fetched successfully.
 - **Keep the two-stage Containerfile; change only the URL and the
   member path.** The fetch stage resolves the platform package for
   `TARGETARCH`, verifies the sha256, and extracts
