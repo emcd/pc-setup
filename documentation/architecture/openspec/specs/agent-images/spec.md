@@ -2,7 +2,6 @@
 
 ## Purpose
 PC Setup production OCI images for Cistella and other agent harnesses: a pinned shared base, thin harness images, local tags, and build/validate entrypoints.
-
 ## Requirements
 ### Requirement: Digest-pinned Debian trixie-slim base
 The shared base image SHALL use `debian:trixie-slim` pinned by multi-arch index digest. The build SHALL fail if the pulled digest does not match the pin. The image SHALL build for `amd64` and `arm64` by selecting arch-specific artifact URLs and checksums from `TARGETARCH`.
@@ -45,7 +44,7 @@ Each production image SHALL pin third-party tool versions and artifact checksums
 
 #### Scenario: OpenCode comes from a versioned artifact
 - **WHEN** the OpenCode image is built
-- **THEN** OpenCode is installed from a versioned GitHub release tarball whose checksum matches the pin
+- **THEN** OpenCode is installed from a versioned npm platform package tarball whose checksum matches the pin, and the archive member is installed as `/usr/local/bin/opencode`
 
 #### Scenario: Codex comes from a versioned artifact
 - **WHEN** the Codex image is built
@@ -91,3 +90,4 @@ Distro-packaged CLI tools beyond the contracts above SHALL be declared in the sh
 #### Scenario: Muse build tags its own image
 - **WHEN** `scripts/build-image muse` succeeds
 - **THEN** `podman image exists cistella/muse:local`
+

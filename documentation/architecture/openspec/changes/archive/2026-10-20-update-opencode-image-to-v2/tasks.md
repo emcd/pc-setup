@@ -19,5 +19,5 @@
 ## 4. Docs and spec sync
 
 - [x] 4.1 Document the OpenCode npm channel in the README refresh policy
-- [ ] 4.2 Sync the `agent-images` delta into the main spec and archive the change
-- [ ] 4.3 Update task statuses in this change with each completing commit
+- [x] 4.2 Sync the `agent-images` delta into the main spec and archive the change
+- [x] 4.3 Update task statuses in this change with each completing commit
