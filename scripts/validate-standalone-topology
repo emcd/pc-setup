@@ -102,7 +102,17 @@ fi
 
 service_file="${HOME}/.local/state/opencode/service.json"
 host_log="${HOME}/.local/share/opencode/log/opencode.log"
-service_pid_before="$(python3 -c "import json;print(json.load(open('${service_file}'))['pid'])")"
+# The shared service exists only for ad-hoc host sessions outside a
+# bundle, so a host without one is realistic: treat displacement checks
+# as vacuous instead of crashing on the missing file.
+have_service=0
+service_pid_before=""
+if python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "${service_file}" >/dev/null 2>&1; then
+    have_service=1
+    service_pid_before="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "${service_file}")"
+else
+    echo "LIVE NOTE (no shared service: displacement checks vacuous)"
+fi
 replaced_before=0
 if [[ -f "${host_log}" ]]; then
     replaced_before="$(grep -c 'registration replaced' "${host_log}" || true)"
@@ -133,8 +143,12 @@ if [[ -z "${seat}" ]]; then
     kill "${conduct_pid}" 2>/dev/null || true
     report fail "live seat started via profile default" "no probe container appeared"
 else
-    sleep 15
-    guest_ps="$(podman exec "${seat}" ps -eo args 2>/dev/null || true)"
+    guest_ps=""
+    for _ in $(seq 1 15); do
+        guest_ps="$(podman exec "${seat}" ps -eo args 2>/dev/null || true)"
+        if echo "${guest_ps}" | grep -q 'serve --stdio --port 0'; then break; fi
+        sleep 2
+    done
     if echo "${guest_ps}" | grep -q 'opencode --standalone'; then
         report ok "live default argv reached the seat (opencode --standalone)"
     else
@@ -149,7 +163,10 @@ fi
 
 kill "${conduct_pid}" 2>/dev/null || true
 wait "${conduct_pid}" 2>/dev/null || true
-sleep 5
+for _ in $(seq 1 15); do
+    if ! podman ps --filter 'label=probe=standalone-default' --format '{{.Names}}' 2>/dev/null | grep -q .; then break; fi
+    sleep 2
+done
 
 if podman ps --filter 'label=probe=standalone-default' --format '{{.Names}}' 2>/dev/null | grep -q .; then
     report fail "live probe seat torn down" "container residue remains"
@@ -157,8 +174,13 @@ else
     report ok "live probe seat torn down"
 fi
 
-service_pid_after="$(python3 -c "import json;print(json.load(open('${service_file}'))['pid'])")"
-if [[ "${service_pid_after}" == "${service_pid_before}" ]]; then
+service_pid_after=""
+if [[ "${have_service}" -eq 1 ]]; then
+    service_pid_after="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "${service_file}")"
+fi
+if [[ "${have_service}" -eq 0 ]]; then
+    report ok "host displacement check vacuous (no shared service)"
+elif [[ "${service_pid_after}" == "${service_pid_before}" ]]; then
     report ok "host shared service undisplaced (pid ${service_pid_before})"
 else
     report fail "host shared service undisplaced (pid ${service_pid_before})" "now pid ${service_pid_after}"
