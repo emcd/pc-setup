@@ -126,6 +126,18 @@ the seat's session, its tools run inside the container, and the host's
 service is never displaced. The seat still shares the session database,
 credentials and configuration through the profile's mounts.
 
+The profile default command carries `--standalone` as well
+(`command = ['opencode', '--standalone']`), because
+`cistella conduct --profile <name>` with no explicit harness argv runs
+the profile default -- and a bare `opencode` there would discover the
+host's shared service again. An explicit caller argv after `--` still
+overrides the default intentionally, so the default secures the default
+path, not every possible invocation.
+`scripts/validate-standalone-topology` checks both the profile defaults
+and every coder initial/resume command; its `--live` mode launches a
+disposable seat through the default path and receipts the private
+server, the teardown, and the undisplaced host service.
+
 ### The seat file watcher is disabled
 
 The seat profiles set `OPENCODE_DISABLE_FILEWATCHER = '1'`. The projects
@@ -182,8 +194,23 @@ It does not deploy the QA bundle.
 ## Cistella Config Backup
 
 - Portable seat profiles: `configuration/cistella/profiles/`
-  (`opencode.toml`, `cistella-maintainer.toml`)
+  (`opencode.toml`, `coordinator.toml`, `cistella-maintainer.toml`,
+  `muse.toml`)
 - Host deployment command: `bash ./scripts/deploy-cistella-profiles`
 - `default.toml` is Cistella's baked example and is not backed up.
 - Seat `gh` state under `~/.config/cistella/auxiliary/gh` is not backed
   up. Rehydrate with the one-liner in Rootless Podman above.
+
+### Seat SSH preflight
+
+The fleet profiles declare the `ssh` extension, which reads the
+invoker's ambient `SSH_AUTH_SOCK`. A seat launched without it refuses
+to start (declared-but-unprovidable) rather than silently running
+without agent forwarding. Before launching seats, check the actual
+launcher environment:
+
+`test -n "${SSH_AUTH_SOCK:-}" && test -S "$SSH_AUTH_SOCK"`
+
+If it fails, launch from the intended agent-enabled environment, or
+intentionally select an agentless profile. Do not paper it over with a
+dummy socket or a stale fixed value.
