@@ -90,4 +90,3 @@ Distro-packaged CLI tools beyond the contracts above SHALL be declared in the sh
 #### Scenario: Muse build tags its own image
 - **WHEN** `scripts/build-image muse` succeeds
 - **THEN** `podman image exists cistella/muse:local`
-

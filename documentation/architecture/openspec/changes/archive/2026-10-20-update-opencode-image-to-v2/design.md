@@ -89,12 +89,16 @@ different Opencode configuration layout; deciding anything about the
   still shares the session database, credentials and configuration
   through the profile's mounts, so there is one session list and one
   credential set across the host and the seats.
-- **The host does not run the shared server as a unit.** The first host
-  session starts it, so the service inherits the session's environment.
-  The server launches MCP servers as child processes and needs node,
-  npx, python3, agentmux and nb-mcp on its PATH; a unit would have to
-  mirror the interactive PATH by hand, and a stale copy fails as broken
-  MCP servers rather than as a misconfigured service.
+- **The host does not run the shared server as a unit, and bundle
+  sessions do not use it.** The host's own coder runs
+  `opencode --standalone`, so each host-side bundle session owns a
+  per-session server that inherits the pane's environment. The server
+  launches MCP servers as child processes and needs node, npx, python3,
+  agentmux and nb-mcp on its PATH; a unit would have to mirror the
+  interactive PATH by hand, and a stale copy fails as broken MCP
+  servers rather than as a misconfigured service. The shared service
+  remains only for ad-hoc host sessions outside a bundle, which get an
+  agentmux MCP client with no bundle identity.
 
 ## Risks / Trade-offs
 
@@ -122,9 +126,14 @@ different Opencode configuration layout; deciding anything about the
 
 Land the image, pins, refresh track, and tests as one change. The image
 is rebuilt locally and validated; seats are recreated through the
-coordinator afterwards. Rollback is `git revert` plus a seat recreate;
-the refresh script's `--rollback` re-tags the previous image. No
-registry state is involved.
+coordinator afterwards. Rollback of the image is `git revert` plus a
+seat recreate; the refresh script's `--rollback` re-tags the previous
+image. No registry state is involved. That covers the image only: the
+host and the seats share one session database, and a V2-era database is
+not promised to open under V1, nor are V2 transcripts recoverable from
+a V1 backup. A database downgrade needs a separately verified
+backup/restore plan; do not assume `git revert` restores the
+pre-upgrade state.
 
 ## Open Questions
 
