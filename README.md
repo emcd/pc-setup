@@ -120,11 +120,22 @@ CLI-managed service may already hold the default port, and two services
 must never contend for one port, because the second to register displaces
 the first and the first shuts itself down.
 
+The supervisor is a host-runtime script, so it is installed to
+`~/.local/bin/opencode-shared-service` rather than referenced from a
+checkout that can move. `scripts/install-opencode-shared-service`
+installs both it and the unit, and `ubuntu.bash` runs that installer.
+
 ```bash
 systemctl --user start opencode-shared.service
 systemctl --user status opencode-shared.service
 cat ~/.local/state/opencode/service.json   # url, port, password
 ```
+
+The server launches each project's MCP servers as child processes, so
+the unit carries the same PATH the interactive shell has: mise shims for
+node, npx and python3, `~/.cargo/bin` for agentmux and nb-mcp, and the
+npm prefix for opencode and the other harness CLIs. Without it the
+server starts fine but every MCP server fails to spawn.
 
 Clients in a container then discover the routable URL and password from
 the shared registration and connect to the host's single server, so the
