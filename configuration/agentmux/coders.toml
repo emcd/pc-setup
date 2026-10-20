@@ -57,8 +57,8 @@ id = 'cistella-muse'
 id = 'opencode'
 
     [coders.tmux]
-    initial-command = 'opencode'
-    resume-command = 'opencode --session {{coder-session-id}}'
+    initial-command = 'opencode --standalone'
+    resume-command = 'opencode --standalone --session {{coder-session-id}}'
     # Matches frame structure only; the "user has pending compose text"
     # guard is delegated to prompt-idle-column (cursor check below), not
     # the regex. Fixes issues/relay/58 defect 2: the prior strict regex
