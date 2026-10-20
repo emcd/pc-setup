@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+#
+# Regression check for the standalone seat/host topology.
+#
+# Tier-2 (Advisor) F1: the profile default harness command is a supported
+# entry path -- `cistella conduct --profile <name>` with no explicit argv
+# runs the profile `command` array. If that default is a bare `opencode`
+# it discovers the host's shared service, and the seat's tools then run
+# on the host outside container confinement. The default must therefore
+# carry `--standalone`, exactly like every coder initial/resume command.
+#
+# Static checks (default mode) assert:
+#   1. each OpenCode-family profile default command runs opencode with
+#      --standalone (opencode, coordinator, cistella-maintainer);
+#   2. the muse profile default runs muse, not opencode (boundary);
+#   3. every initial/resume coder command that invokes opencode carries
+#      --standalone (containerized seats and the host coder alike).
+#
+# Live mode (--live) additionally launches one disposable seat through
+# the DEFAULT command path (no explicit argv, repo profiles supplied via
+# --configuration-directory so nothing live is touched) and records a
+# receipt: the harness cmdline inside the container, exactly one private
+# server (`serve --stdio --port 0`) inside the container, and the host's
+# shared service undisplaced (same pid, no new registration-replaced
+# events). The seat is torn down afterwards; any residue fails the run.
+#
+# Usage: validate-standalone-topology [--live]
+# Exit: 0 all pass (or live skipped with prereqs absent), 1 any failure.
+#
+# Note the documented boundary: an explicit caller argv after `--`
+# overrides the profile default intentionally, so the profile default
+# secures the default path, not every possible invocation.
+
+set -eu -o pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+profiles="${repo_root}/configuration/cistella/profiles"
+coders="${repo_root}/configuration/agentmux/coders.toml"
+live=0
+if [[ "${1:-}" == "--live" ]]; then live=1; fi
+
+pass=0
+fail=0
+
+report() {
+    if [[ "$1" == "ok" ]]; then
+        pass=$((pass + 1))
+        echo "PASS $2"
+    else
+        fail=$((fail + 1))
+        echo "FAIL $2: $3"
+    fi
+}
+
+# --- static: profile defaults ------------------------------------------------
+for profile in opencode coordinator cistella-maintainer; do
+    cmd="$(grep -E "^command = " "${profiles}/${profile}.toml" | head -1)"
+    if [[ "${cmd}" == *"opencode"* && "${cmd}" == *"--standalone"* ]]; then
+        report ok "profile default ${profile} runs opencode --standalone"
+    else
+        report fail "profile default ${profile} runs opencode --standalone" "got: ${cmd}"
+    fi
+done
+
+muse_cmd="$(grep -E "^command = " "${profiles}/muse.toml" | head -1)"
+if [[ "${muse_cmd}" == *"muse"* && "${muse_cmd}" != *"opencode"* ]]; then
+    report ok "profile default muse runs muse, not opencode"
+else
+    report fail "profile default muse runs muse, not opencode" "got: ${muse_cmd}"
+fi
+
+# --- static: coder initial/resume commands ------------------------------------
+bad=0
+while IFS= read -r line; do
+    if [[ "${line}" == *"opencode"* && "${line}" != *"--standalone"* ]]; then
+        bad=$((bad + 1))
+        echo "  offending: ${line}"
+    fi
+done < <(grep -E "initial-command|resume-command" "${coders}")
+if [[ "${bad}" -eq 0 ]]; then
+    report ok "every opencode coder command carries --standalone"
+else
+    report fail "every opencode coder command carries --standalone" "${bad} command(s) without it"
+fi
+
+# --- live: default-command launch receipt -------------------------------------
+if [[ "${live}" -eq 0 ]]; then
+    echo "STATIC ${pass} pass / ${fail} fail"
+    exit $((fail > 0))
+fi
+
+for tool in cistella podman timeout python3; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+        echo "LIVE SKIP (${tool} not on PATH)"
+        exit $((fail > 0))
+    fi
+done
+if ! podman image exists cistella/opencode:local >/dev/null 2>&1; then
+    echo "LIVE SKIP (cistella/opencode:local not present)"
+    exit $((fail > 0))
+fi
+
+service_file="${HOME}/.local/state/opencode/service.json"
+host_log="${HOME}/.local/share/opencode/log/opencode.log"
+service_pid_before="$(python3 -c "import json;print(json.load(open('${service_file}'))['pid'])")"
+replaced_before=0
+if [[ -f "${host_log}" ]]; then
+    replaced_before="$(grep -c 'registration replaced' "${host_log}" || true)"
+fi
+
+scratch="$(mktemp -d "${repo_root}/.auxiliary/temporary/standalone-probe-XXXXXX")"
+conduct_log="$(mktemp)"
+cleanup() { rm -rf "${scratch}" "${conduct_log}"; }
+trap cleanup EXIT
+
+timeout -s KILL 150 cistella conduct \
+    --profile opencode \
+    --configuration-directory "${repo_root}/configuration/cistella" \
+    --session-directory "${scratch}" \
+    --project-name cistella \
+    --supplement bundle-name=standalone-probe \
+    --label probe=standalone-default \
+    >"${conduct_log}" 2>&1 &
+conduct_pid=$!
+
+seat=""
+for _ in $(seq 1 60); do
+    seat="$(podman ps --filter 'label=probe=standalone-default' --format '{{.Names}}' 2>/dev/null | head -1 || true)"
+    if [[ -n "${seat}" ]]; then break; fi
+    sleep 2
+done
+if [[ -z "${seat}" ]]; then
+    kill "${conduct_pid}" 2>/dev/null || true
+    report fail "live seat started via profile default" "no probe container appeared"
+else
+    sleep 15
+    guest_ps="$(podman exec "${seat}" ps -eo args 2>/dev/null || true)"
+    if echo "${guest_ps}" | grep -q 'opencode --standalone'; then
+        report ok "live default argv reached the seat (opencode --standalone)"
+    else
+        report fail "live default argv reached the seat (opencode --standalone)" "guest ps: $(echo "${guest_ps}" | tr '\n' ';' | head -c 300)"
+    fi
+    if echo "${guest_ps}" | grep -q 'serve --stdio --port 0'; then
+        report ok "live seat owns a private server inside the container"
+    else
+        report fail "live seat owns a private server inside the container" "guest ps: $(echo "${guest_ps}" | tr '\n' ';' | head -c 300)"
+    fi
+fi
+
+kill "${conduct_pid}" 2>/dev/null || true
+wait "${conduct_pid}" 2>/dev/null || true
+sleep 5
+
+if podman ps --filter 'label=probe=standalone-default' --format '{{.Names}}' 2>/dev/null | grep -q .; then
+    report fail "live probe seat torn down" "container residue remains"
+else
+    report ok "live probe seat torn down"
+fi
+
+service_pid_after="$(python3 -c "import json;print(json.load(open('${service_file}'))['pid'])")"
+if [[ "${service_pid_after}" == "${service_pid_before}" ]]; then
+    report ok "host shared service undisplaced (pid ${service_pid_before})"
+else
+    report fail "host shared service undisplaced (pid ${service_pid_before})" "now pid ${service_pid_after}"
+fi
+if [[ -f "${host_log}" ]]; then
+    replaced_after="$(grep -c 'registration replaced' "${host_log}" || true)"
+    if [[ "${replaced_after}" == "${replaced_before}" ]]; then
+        report ok "no host registration-replaced events during probe"
+    else
+        report fail "no host registration-replaced events during probe" "$((replaced_after - replaced_before)) new event(s)"
+    fi
+fi
+
+echo "STATIC+LIVE ${pass} pass / ${fail} fail"
+exit $((fail > 0))

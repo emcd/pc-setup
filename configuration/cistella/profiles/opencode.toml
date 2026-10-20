@@ -2,7 +2,7 @@
 
 image = 'cistella/opencode:local'
 container-home = '{{environment:HOME}}'
-command = ['opencode']
+command = ['opencode', '--standalone']
 environment-acceptances = [
   'AGENTMUX_BUNDLE',
   'AGENTMUX_SESSION',
