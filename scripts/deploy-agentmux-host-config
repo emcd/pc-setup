@@ -21,6 +21,7 @@ bundle_files=( "${source_bundle_dir}"/*.toml )
 systemd_files=(
     "${source_systemd_dir}/agentmux.service"
     "${source_systemd_dir}/agentmux-debug.service"
+    "${source_systemd_dir}/opencode-shared.service"
 )
 shopt -u nullglob
 
@@ -45,4 +46,4 @@ fi
 
 echo "deployed agentmux config to ${target_config_dir}"
 echo "deployed agentmux bundles to ${target_bundle_dir}"
-echo "deployed agentmux user units to ${target_systemd_dir}"
+echo "deployed user units to ${target_systemd_dir}"

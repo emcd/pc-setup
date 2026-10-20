@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenCode shared service for host and containerized clients
+Documentation=https://opencode.ai/v2/docs/cli/
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=%h/src/pc-setup/scripts/opencode-shared-service
+Restart=always
+RestartSec=3
+Environment=PATH=%h/.local/share/npm-packages/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=default.target

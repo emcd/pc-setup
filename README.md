@@ -102,6 +102,36 @@ GH_CONFIG_DIR="${HOME}/.config/cistella/in-container/gh" \
 
 Then `chmod 600 "${HOME}/.config/cistella/in-container/gh/hosts.yml"`.
 
+## OpenCode Shared Service
+
+OpenCode 2 runs a shared background server that binds loopback and
+registers itself in `~/.local/state/opencode/service.json`. The Cistella
+seats share that state directory, so they read the registration and try
+to connect to it, but a container's loopback is its own: a seat can never
+reach a loopback-bound service. The seat therefore needs the service on
+an address a container can reach.
+
+`opencode-shared.service` (user unit, `configuration/systemd/user/`)
+supervises the service on the host's LAN address -- the address podman
+hands a container as `host.containers.internal`. The address is
+DHCP-assigned, so the supervisor resolves it at start and rebinds if the
+lease changes. The port is deliberately not OpenCode's default: a
+CLI-managed service may already hold the default port, and two services
+must never contend for one port, because the second to register displaces
+the first and the first shuts itself down.
+
+```bash
+systemctl --user start opencode-shared.service
+systemctl --user status opencode-shared.service
+cat ~/.local/state/opencode/service.json   # url, port, password
+```
+
+Clients in a container then discover the routable URL and password from
+the shared registration and connect to the host's single server, so the
+host and every seat share one server, one session database, and one set
+of credentials. The service is password-gated; the password lives only
+in the state directory, which the seats read but nothing else can.
+
 ## Terminal Fonts
 
 `scripts/deploy-terminal-font-config` installs `FiraMono Nerd Font Mono` into
