@@ -4,7 +4,12 @@ set -eu -o pipefail
 
 curl -fsSL https://claude.ai/install.sh | bash
 npm install --global @openai/codex
-npm install --global opencode-ai@latest
+# OpenCode 2 ships as @opencode/cli. The V1 package (opencode-ai)
+# installs the same `opencode` binary name, so it is removed first:
+# installing both leaves the two fighting over one command. The
+# uninstall is a no-op when V1 is not installed.
+npm uninstall --global opencode-ai
+npm install --global @opencode/cli@latest
 
 npm install --global difit
 npm install --global @fission-ai/openspec@latest
