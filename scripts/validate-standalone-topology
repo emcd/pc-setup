@@ -175,11 +175,16 @@ else
 fi
 
 service_pid_after=""
-if [[ "${have_service}" -eq 1 ]]; then
+have_service_after=0
+if python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "${service_file}" >/dev/null 2>&1; then
+    have_service_after=1
     service_pid_after="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "${service_file}")"
 fi
-if [[ "${have_service}" -eq 0 ]]; then
-    report ok "host displacement check vacuous (no shared service)"
+if [[ "${have_service}" -eq 0 && "${have_service_after}" -eq 1 ]]; then
+    report fail "no host shared service created by the probe" \
+        "a shared service appeared during the probe (default path must register nothing)"
+elif [[ "${have_service}" -eq 0 ]]; then
+    report ok "host displacement check vacuous (no shared service before or after)"
 elif [[ "${service_pid_after}" == "${service_pid_before}" ]]; then
     report ok "host shared service undisplaced (pid ${service_pid_before})"
 else
