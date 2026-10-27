@@ -21,6 +21,17 @@ provision_directory() {
     echo "provisioned ${path}"
 }
 
+seed_rustup_toolchain() {
+    local version="${1}"
+    local rustup_home="${cache_home}/cistella/in-container/rustup"
+    if RUSTUP_HOME="${rustup_home}" rustup toolchain list 2>/dev/null | grep -q "${version}"; then
+        echo "rustup toolchain ${version} already seeded"
+        return 0
+    fi
+    RUSTUP_HOME="${rustup_home}" rustup toolchain install "${version}" \
+        --profile minimal --component rustfmt,clippy --no-self-update
+}
+
 # Container-owned state, in-container taxonomy: host
 # <type>/cistella/in-container maps wholesale to guest <type>, so seat
 # state never shadows same-named host state and per-tool dirs land inside
@@ -37,3 +48,14 @@ provision_directory "${config_home}/cistella/in-container/gh"
 provision_directory "${data_home}/cistella/in-container/emcd-agents"
 provision_directory "${data_home}/cistella/in-container/uv"
 provision_directory "${data_home}/cistella/in-container/opentui"
+
+# Guest-owned rustup tree shared by all seats (cistella/issues/15): one
+# mount restores the atomic renames that fail across nested mounts, and
+# the host toolchain is neither read nor written from containers. The
+# final seat image carries no Rust toolchain of its own, so this tree is
+# the seats' only toolchain source: pre-seed the pinned toolchain so
+# first use works without a per-seat download and offline seats work at
+# all. Version tracks RUST_IMAGE (1.98 family) and the agentmux pinned
+# baseline; update together.
+provision_directory "${cache_home}/cistella/in-container/rustup"
+seed_rustup_toolchain "1.98.0"

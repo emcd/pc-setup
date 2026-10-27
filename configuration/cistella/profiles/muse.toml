@@ -64,10 +64,16 @@ host-source = '~/.npm'
 container-target = '{{core:container-home}}/.npm'
 mode = 'rw'
 
+# Guest-owned rustup home: rustup hardcodes per-subdir paths under
+# $RUSTUP_HOME (tmp, downloads, update-hashes, toolchains) and moves
+# files between them with atomic renames, which fail across separate
+# mounts (EXDEV) — so the tree must be a single mount, not nested
+# carveouts. This seat-owned dir is the guests' toolchain tree;
+# the host toolchain is neither read nor written from containers.
 [[mounts]]
-host-source = '~/.rustup'
+host-source = '~/.cache/cistella/in-container/rustup'
 container-target = '{{core:container-home}}/.rustup'
-mode = 'ro'
+mode = 'rw'
 
 ## Agentmux (shared host config/state)
 
