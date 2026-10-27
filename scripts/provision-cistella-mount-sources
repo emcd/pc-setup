@@ -37,7 +37,7 @@ seed_rustup_toolchain() {
 # state never shadows same-named host state and per-tool dirs land inside
 # the tree without new mounts. Known content dirs are pre-created for
 # host-side hydration (seat GitHub CLI PAT). Shared host mounts (cargo,
-# npm, rustup, gitconfig, ssh, opencode and agentmux state) pre-exist
+# npm, gitconfig, ssh, opencode and agentmux state) pre-exist
 # outside this tree.
 provision_directory "${config_home}/cistella/in-container"
 provision_directory "${data_home}/cistella/in-container"
