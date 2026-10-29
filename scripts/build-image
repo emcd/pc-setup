@@ -7,6 +7,7 @@ target="opencode"
 no_cache=()
 extra_labels=()
 skip_base=0
+skip_parents=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -16,7 +17,8 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || { echo "error: --label needs KEY=VALUE" >&2; exit 1; }
             extra_labels+=(--label "$2"); shift 2 ;;
         --label=*) extra_labels+=(--label "${1#--label=}"); shift ;;
-        base|opencode|codex|muse) target="$1"; shift ;;
+        base|opencode|codex|muse|opencode-pandoc) target="$1"; shift ;;
+        --skip-parents) skip_parents=1; shift ;;
         *)
             echo "error: unknown argument $1" >&2
             exit 1
@@ -75,4 +77,13 @@ if [[ "${skip_base}" == "0" ]]; then
 fi
 # shellcheck disable=SC1091
 . "${repository_root}/images/cistella/base/pins.sh"
+if [[ "${target}" == "opencode-pandoc" && "${skip_parents}" == "0" ]]; then
+    # Lane layer sits on the opencode image: build the parent chain
+    # first (parents from cache; --no-cache applies to the named image
+    # only, matching the harness semantic). Callers that already
+    # converged the parents (refresh-images builds them in dependency
+    # order) pass --skip-parents so the intermediate build cannot
+    # retag opencode:local without its refresh label.
+    build_one opencode --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
+fi
 build_one "${target}" "${no_cache[@]}" "${extra_labels[@]}" --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"

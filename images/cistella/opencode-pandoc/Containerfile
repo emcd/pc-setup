@@ -1,0 +1,48 @@
+ARG DEBIAN_IMAGE
+FROM ${DEBIAN_IMAGE} AS fetch
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pandoc publishes per-arch Linux release tarballs holding bin/pandoc,
+# bin/pandoc-lua and bin/pandoc-server. Only the pandoc binary is
+# installed; nothing executes at build time.
+ARG TARGETARCH
+ARG PANDOC_VERSION
+ARG PANDOC_SHA256_ARM64
+ARG PANDOC_SHA256_AMD64
+RUN set -eu \
+    && case "${TARGETARCH}" in \
+         arm64) pan_arch=arm64; pan_sha="${PANDOC_SHA256_ARM64}" ;; \
+         amd64) pan_arch=amd64; pan_sha="${PANDOC_SHA256_AMD64}" ;; \
+         *) echo "error: unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl --fail --location --show-error --silent --output /tmp/pandoc.tgz \
+         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${pan_arch}.tar.gz" \
+    && echo "${pan_sha}  /tmp/pandoc.tgz" | sha256sum --check --strict \
+    && mkdir --parents /opt/harness \
+    && tar --extract --gzip --file /tmp/pandoc.tgz --directory /opt/harness \
+         --strip-components=2 "pandoc-${PANDOC_VERSION}/bin/pandoc" \
+    && chmod +x /opt/harness/pandoc \
+    && rm /tmp/pandoc.tgz
+
+FROM localhost/cistella/opencode:local
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        fontconfig \
+        fonts-dejavu-core \
+        lmodern \
+        poppler-utils \
+        texlive-fonts-recommended \
+        texlive-latex-extra \
+        texlive-latex-recommended \
+        texlive-xetex \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=fetch /opt/harness/pandoc /usr/local/bin/pandoc

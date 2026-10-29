@@ -48,6 +48,7 @@ base_pins="${repository_root}/images/cistella/base/pins.sh"
 opencode_pins="${repository_root}/images/cistella/opencode/pins.sh"
 codex_pins="${repository_root}/images/cistella/codex/pins.sh"
 muse_pins="${repository_root}/images/cistella/muse/pins.sh"
+pandoc_pins="${repository_root}/images/cistella/opencode-pandoc/pins.sh"
 lock_file="${XDG_RUNTIME_DIR:-/tmp}/pc-setup-refresh-images.lock"
 workdir="$(mktemp -d)" || { echo "error: mktemp failed" >&2; exit 2; }
 trap 'rm -rf "${workdir}"' EXIT
@@ -60,7 +61,7 @@ for arg in "$@"; do
         check) mode="check" ;;
         --apply) mode="apply" ;;
         --rollback) mode="rollback" ;;
-        base|opencode|codex|muse)
+        base|opencode|codex|muse|opencode-pandoc)
             if [[ "${mode}" == "rollback" ]]; then
                 rollback_target="${arg}"
             else
@@ -263,10 +264,12 @@ snap_base="${snapdir}/base-pins.sh"
 snap_opencode="${snapdir}/opencode-pins.sh"
 snap_codex="${snapdir}/codex-pins.sh"
 snap_muse="${snapdir}/muse-pins.sh"
+snap_pandoc="${snapdir}/opencode-pandoc-pins.sh"
 cp "${base_pins}" "${snap_base}" || die2 "cannot snapshot base pins"
 cp "${opencode_pins}" "${snap_opencode}" || die2 "cannot snapshot opencode pins"
 cp "${codex_pins}" "${snap_codex}" || die2 "cannot snapshot codex pins"
 cp "${muse_pins}" "${snap_muse}" || die2 "cannot snapshot muse pins"
+cp "${pandoc_pins}" "${snap_pandoc}" || die2 "cannot snapshot pandoc pins"
 
 # --- discovery (read-only; snapshot + network only, no live mutation) -------
 desired="${workdir}/desired.tsv"
@@ -405,6 +408,52 @@ print(arm + "\t" + amd)
     note_drift "muse MUSE_VERSION ${current} -> ${version}"
 }
 
+latest_pandoc_tag() {
+    # Newest stable jgm/pandoc release tag (bare versions, e.g. 3.1.13).
+    # Single attempt like the npm channel lookup: transport failure is
+    # an operational error (exit 2), not a skip.
+    local _outvar="$1" _json
+    _json="$(github_api "repos/jgm/pandoc/releases?per_page=30")" \
+        || return 1
+    _tag="$(printf '%s' "${_json}" | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+if not isinstance(d, list):
+    raise SystemExit("malformed root")
+best = None
+for r in d:
+    if not isinstance(r, dict) or not isinstance(r.get("tag_name"), str):
+        raise SystemExit("malformed record")
+    if r.get("prerelease") or r.get("draft"):
+        continue
+    m = re.fullmatch(r"([0-9]+)\.([0-9]+)(\.([0-9]+))?", r["tag_name"])
+    if not m:
+        continue
+    key = (int(m.group(1)), int(m.group(2)), int(m.group(4) or 0))
+    if best is None or key > best[0]:
+        best = (key, r["tag_name"])
+if best is None:
+    raise SystemExit("no stable tag")
+print(best[1])
+')" || return 1
+    [[ "${_tag}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || return 1
+    printf -v "${_outvar}" '%s' "${_tag}"
+}
+
+discover_pandoc() {
+    # Held by series policy: notify on any newer stable upstream, within
+    # or above the 3.1 series, and never touch the pins or fetch
+    # tarballs. Unholding requires adding the tarball-fetch path first;
+    # refuse loudly rather than drifting silently.
+    local current tag
+    pin_value "${snap_pandoc}" PANDOC_VERSION current \
+        || die2 "cannot read PANDOC_VERSION"
+    latest_pandoc_tag tag || die2 "pandoc release lookup failed"
+    [[ "${tag}" == "${current}" ]] && return 0
+    is_held PANDOC_VERSION || die2 "PANDOC_VERSION unheld with no fetch path; add tarball discovery first"
+    note_held "pandoc PANDOC_VERSION ${current} -> ${tag} ($(hold_reason PANDOC_VERSION))"
+}
+
 discover_digest_pin() {
     local var="$1" current full_repo latest
     pin_value "${snap_base}" "${var}" current \
@@ -423,7 +472,7 @@ do_rollback() {
     if [[ -n "${rollback_target}" ]]; then
         names="${rollback_target}"
     else
-        names="base opencode codex muse"
+        names="base opencode codex muse opencode-pandoc"
     fi
     for name in ${names}; do
         podman image exists "cistella/${name}:previous" \
@@ -450,7 +499,7 @@ if [[ "${mode}" == "rollback" ]]; then
     exit 0
 fi
 
-for name in base opencode codex muse; do
+for name in base opencode codex muse opencode-pandoc; do
     podman image exists "cistella/${name}:local" \
         || die2 "cistella/${name}:local does not exist; build it first"
 done
@@ -476,7 +525,7 @@ done
 # .pre-commit-config.yaml updates across projects.
 # comparison anywhere.
 
-HOLD_VARS=" PRE_COMMIT_VERSION "
+HOLD_VARS=" PRE_COMMIT_VERSION PANDOC_VERSION "
 
 is_held() {
     [[ "${HOLD_VARS}" == *" $1 "* ]]
@@ -485,6 +534,7 @@ is_held() {
 hold_reason() {
     case "$1" in
         PRE_COMMIT_VERSION) printf '%s' "needs coordinated .pre-commit-config.yaml bumps across projects" ;;
+        PANDOC_VERSION) printf '%s' "3.1-series policy: notify-only, never auto-bumped; promotion needs both teams" ;;
         *) printf '%s' "held" ;;
     esac
 }
@@ -612,6 +662,7 @@ discover_crate() {
 discover_opencode
 discover_codex
 discover_muse
+discover_pandoc
 discover_digest_pin DEBIAN_IMAGE
 discover_digest_pin RUST_IMAGE
 discover_pypi emcd-agents EMCD_AGENTS_VERSION any
@@ -625,17 +676,45 @@ discover_crate linecheck LINECHECK_VERSION
 
 # --- staleness via build labels ---------------------------------------------
 # An image is stale when its pc-setup.refresh-pins label is missing or
-# differs from the hash of the pins files it builds from. This reconciles
-# pins to images even when upstream shows no drift (retry after failure,
-# apply after rollback, hand-edited pins).
+# differs from the effective fingerprint of the pins files and recipe
+# inputs it builds from. This reconciles pins to images even when
+# upstream shows no drift (retry after failure, apply after rollback,
+# hand-edited pins). The input list is explicit per image (no generic
+# DAG): every file the build reads that is not a fetched upstream
+# artifact -- pins, the Containerfile, and declared COPY inputs such
+# as profile.d/seat-path.sh.
+
+fingerprint_inputs() {
+    # $1 image name; prints repo-relative input paths, ancestors first.
+    case "$1" in
+        base) printf '%s\n' \
+            images/cistella/base/pins.sh \
+            images/cistella/base/Containerfile \
+            images/cistella/base/profile.d/seat-path.sh ;;
+        opencode) fingerprint_inputs base; printf '%s\n' \
+            images/cistella/opencode/pins.sh \
+            images/cistella/opencode/Containerfile ;;
+        codex) fingerprint_inputs base; printf '%s\n' \
+            images/cistella/codex/pins.sh \
+            images/cistella/codex/Containerfile ;;
+        muse) fingerprint_inputs base; printf '%s\n' \
+            images/cistella/muse/pins.sh \
+            images/cistella/muse/Containerfile ;;
+        opencode-pandoc) fingerprint_inputs opencode; printf '%s\n' \
+            images/cistella/opencode-pandoc/pins.sh \
+            images/cistella/opencode-pandoc/Containerfile ;;
+    esac
+}
 
 pins_hash() {
-    case "$1" in
-        base) sha256sum "${base_pins}" | cut -d' ' -f1 ;;
-        opencode) cat "${base_pins}" "${opencode_pins}" | sha256sum | cut -d' ' -f1 ;;
-        codex) cat "${base_pins}" "${codex_pins}" | sha256sum | cut -d' ' -f1 ;;
-        muse) cat "${base_pins}" "${muse_pins}" | sha256sum | cut -d' ' -f1 ;;
-    esac
+    # Effective fingerprint: own pins + own recipe inputs plus every
+    # ancestor's. A recipe-only change marks the image and all
+    # descendants stale.
+    local f files=()
+    while IFS= read -r f; do
+        files+=("${repository_root}/${f}")
+    done < <(fingerprint_inputs "$1")
+    cat "${files[@]}" | sha256sum | cut -d' ' -f1
 }
 
 image_label() {
@@ -656,7 +735,7 @@ apply_desired_pins() {
 compute_stale() {
     stale_images=""
     local name
-    for name in base opencode codex muse; do
+    for name in base opencode codex muse opencode-pandoc; do
         if [[ "$(image_label "${name}")" != "$(pins_hash "${name}")" ]]; then
             stale_images+="${name} "
         fi
@@ -716,6 +795,7 @@ restore_all() {
     cp "${snap_opencode}" "${opencode_pins}"
     cp "${snap_codex}" "${codex_pins}"
     cp "${snap_muse}" "${muse_pins}"
+    cp "${snap_pandoc}" "${pandoc_pins}"
     local name
     for name in ${preserved:-}; do
         podman tag "cistella/${name}:previous" "cistella/${name}:local" \
@@ -745,17 +825,21 @@ done
 rebuild_one() {
     local name="$1" skip=()
     if [[ "${name}" != "base" ]]; then
-        # Base is rebuilt explicitly above when stale; harness builds must
-        # reuse that tag without rebuilding or retagging base themselves,
-        # so checkpoint/restore covers exactly the stale set.
+        # Harness builds reuse base without rebuilding or retagging it;
+        # the lane build additionally reuses opencode, which refresh
+        # already converged in dependency order above. Skipping the
+        # parents keeps their refresh labels intact: an unlabeled
+        # intermediate retag would read as stale on the next check.
         skip=(--skip-base)
+        [[ "${name}" == "opencode-pandoc" ]] && skip+=(--skip-parents)
     fi
     "${repository_root}/scripts/build-image" --no-cache "${skip[@]}" \
         --label "pc-setup.refresh-pins=$(pins_hash "${name}")" "${name}"
     "${repository_root}/scripts/validate-image" "${name}"
 }
 
-# Base first so harnesses copy the fresh base tag.
+# Base first so harnesses copy the fresh base tag. The lane image layers
+# on opencode, so it builds last: inherited rebuilds land before it.
 for name in ${stale_images}; do
     case "${name}" in
         base) rebuild_one base ;;
@@ -764,6 +848,11 @@ done
 for name in ${stale_images}; do
     case "${name}" in
         opencode|codex|muse) rebuild_one "${name}" ;;
+    esac
+done
+for name in ${stale_images}; do
+    case "${name}" in
+        opencode-pandoc) rebuild_one "${name}" ;;
     esac
 done
 
