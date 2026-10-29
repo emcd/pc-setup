@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# Syntax-check every bash script under scripts/ (including this one).
+#
+# Usage: check-shell-syntax
+# Exit: 0 when every bash script parses, 1 otherwise (failures listed).
+#
+# A script counts as bash when its first line is a bash shebang. Other
+# files (Python helpers, data) are skipped, not failed.
+
+set -eu -o pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fail=0
+
+while IFS= read -r file; do
+    head -1 "${file}" | grep -qE '^#!/usr/bin/env bash$|^#!/bin/bash$' || continue
+    if bash -n "${file}"; then
+        echo "ok ${file#${repo_root}/}"
+    else
+        echo "FAIL ${file#${repo_root}/}"
+        fail=1
+    fi
+done < <(find "${repo_root}" -maxdepth 1 -type f | sort)
+
+exit "${fail}"

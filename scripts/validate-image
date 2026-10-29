@@ -7,7 +7,7 @@ target="opencode"
 
 for arg in "$@"; do
     case "${arg}" in
-        base|opencode|codex|muse) target="${arg}" ;;
+        base|opencode|codex|muse|opencode-pandoc) target="${arg}" ;;
         *)
             echo "error: unknown argument ${arg}" >&2
             exit 1
@@ -63,6 +63,8 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
     '
 
 podman run --rm --userns=keep-id "${image_tag}" cc --version >/dev/null
+podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+    sh -c 'fc-list | grep --quiet "DejaVu Sans" && fc-list | grep --quiet "DejaVu Sans Mono"'
 podman run --rm --userns=keep-id "${image_tag}" tmux -V | grep --quiet "${TMUX_VERSION}"
 podman run --rm --userns=keep-id "${image_tag}" gh --version | grep --quiet "${GH_VERSION}"
 
@@ -88,6 +90,29 @@ case "${target}" in
             sh -c 'test "$(command -v muse)" = "/usr/local/bin/muse"'
         podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
             sh -c "muse --version 2>&1 | grep --quiet '${MUSE_VERSION}'"
+        ;;
+    opencode-pandoc)
+        # shellcheck disable=SC1090,SC1091
+        . "${repository_root}/images/cistella/opencode/pins.sh"
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v opencode)" = "/usr/local/bin/opencode"'
+        podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
+            sh -c "opencode --version | grep --quiet '${OPENCODE_VERSION}'"
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v pandoc)" = "/usr/local/bin/pandoc"'
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c "pandoc --version | head -1 | grep --quiet 'pandoc ${PANDOC_VERSION}'"
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c 'xelatex --version >/dev/null && pdftotext -v 2>&1 | grep --quiet "poppler"'
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" sh -c '
+            cd /tmp \
+            && printf "# Handbook check\n\nA table, an em-dash — and an arrow →.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n" > handbook-check.md \
+            && pandoc handbook-check.md -o handbook-check.pdf --toc --toc-depth=2 --pdf-engine=xelatex \
+            && test -s handbook-check.pdf \
+            && test -z "$(pdffonts handbook-check.pdf | tail -n +3 | grep -v "yes *yes *yes" || true)" \
+            && pdftotext handbook-check.pdf - | grep --quiet "—" \
+            && pdftotext handbook-check.pdf - | grep --quiet "→" \
+            && pdftotext handbook-check.pdf - | grep --quiet "Handbook check"'
         ;;
 esac
 

@@ -40,6 +40,13 @@ cp "${repo_root}/images/cistella/base/pins.sh" "${skeleton}/images/cistella/base
 cp "${repo_root}/images/cistella/opencode/pins.sh" "${skeleton}/images/cistella/opencode/"
 cp "${repo_root}/images/cistella/codex/pins.sh" "${skeleton}/images/cistella/codex/"
 cp "${repo_root}/images/cistella/muse/pins.sh" "${skeleton}/images/cistella/muse/"
+mkdir -p "${skeleton}/images/cistella/opencode-pandoc"
+cp "${repo_root}/images/cistella/opencode-pandoc/pins.sh" "${skeleton}/images/cistella/opencode-pandoc/"
+cp "${repo_root}/images/cistella/opencode-pandoc/Containerfile" "${skeleton}/images/cistella/opencode-pandoc/"
+cp "${repo_root}/images/cistella/base/Containerfile" "${skeleton}/images/cistella/base/"
+cp "${repo_root}/images/cistella/opencode/Containerfile" "${skeleton}/images/cistella/opencode/"
+cp "${repo_root}/images/cistella/codex/Containerfile" "${skeleton}/images/cistella/codex/"
+cp "${repo_root}/images/cistella/muse/Containerfile" "${skeleton}/images/cistella/muse/"
 
 # --- stubs ------------------------------------------------------------------
 stubbin="${suite_root}/stubbin"
@@ -238,6 +245,11 @@ for v in os.environ["STUB_CRATE_YANKED_VAL"].split():
     vs.append({"num": v, "yanked": True})
 print(json.dumps({"crate": {"id": "x"}, "versions": vs}))'
         ;;
+    *api.github.com/repos/jgm/pandoc*)
+        STUB_PANDOC_TAG="${STUB_PANDOC_TAG:-3.1.13}" python3 -c '
+import json, os
+print(json.dumps([{"tag_name": os.environ["STUB_PANDOC_TAG"], "prerelease": False, "draft": False}]))'
+        ;;
     *releases/download*)
         [[ -n "${out}" ]] || fail_exit 26
         printf 'fake-tarball-bytes-for-%s' "${url##*/}" > "${out}"
@@ -358,19 +370,24 @@ new_case() {
 }
 
 seed_images() {
-    # $1 fixture root; :local tags present with labels matching live pins.
+    # $1 fixture root; :local tags present with labels matching live
+    # pins+recipes (the effective closure fingerprint).
     local root="$1" name h id
-    for name in base opencode codex muse; do
+    for name in base opencode codex muse opencode-pandoc; do
         id="img-${name}-0"
         echo "cistella/${name}:local=${id}" >> "${root}/state/ids"
     done
-    h="$(sha256sum "${root}/images/cistella/base/pins.sh" | cut -d' ' -f1)"
+    h="$(cat "${root}/images/cistella/base/pins.sh" "${root}/images/cistella/base/Containerfile" | sha256sum | cut -d' ' -f1)"
     echo "img-base-0=${h}" >> "${root}/state/imglabels"
     for name in opencode codex muse; do
-        h="$(cat "${root}/images/cistella/base/pins.sh" \
-            "${root}/images/cistella/$name/pins.sh" | sha256sum | cut -d' ' -f1)"
+        h="$(cat "${root}/images/cistella/base/pins.sh" "${root}/images/cistella/base/Containerfile" \
+            "${root}/images/cistella/$name/pins.sh" "${root}/images/cistella/$name/Containerfile" | sha256sum | cut -d' ' -f1)"
         echo "img-${name}-0=${h}" >> "${root}/state/imglabels"
     done
+    h="$(cat "${root}/images/cistella/base/pins.sh" "${root}/images/cistella/base/Containerfile" \
+        "${root}/images/cistella/opencode/pins.sh" "${root}/images/cistella/opencode/Containerfile" \
+        "${root}/images/cistella/opencode-pandoc/pins.sh" "${root}/images/cistella/opencode-pandoc/Containerfile" | sha256sum | cut -d' ' -f1)"
+    echo "img-opencode-pandoc-0=${h}" >> "${root}/state/imglabels"
 }
 
 local_id() {
@@ -395,6 +412,7 @@ run_refresh() {
         STUB_GH_V="${STUB_GH_V:-}" \
         STUB_OC_V="${STUB_OC_V:-}" \
         STUB_CODEX_V="${STUB_CODEX_V:-}" \
+        STUB_PANDOC_TAG="${STUB_PANDOC_TAG:-}" \
         ./scripts/refresh-images "$@" >"${root}/stdout" 2>"${root}/stderr"; echo "$?" )
 }
 
@@ -402,7 +420,8 @@ pins_sha() {
     sha256sum "$1/images/cistella/base/pins.sh" \
         "$1/images/cistella/opencode/pins.sh" \
         "$1/images/cistella/codex/pins.sh" \
-        "$1/images/cistella/muse/pins.sh" | sha256sum | cut -d' ' -f1
+        "$1/images/cistella/muse/pins.sh" \
+        "$1/images/cistella/opencode-pandoc/pins.sh" | sha256sum | cut -d' ' -f1
 }
 
 current_versions_env() {
@@ -417,9 +436,10 @@ current_versions_env() {
     export STUB_TMUX_V STUB_GH_V STUB_OC_V STUB_CODEX_V STUB_MUSE_V
     STUB_OC_VERSION="${STUB_OC_V}"
     STUB_CODEX_TAGS="rust-v${STUB_CODEX_V}"
+    STUB_PANDOC_TAG="$( ( . "${root}/images/cistella/opencode-pandoc/pins.sh" && printf '%s' "${PANDOC_VERSION}" ) )"
     STUB_DEBIAN_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${DEBIAN_IMAGE}" ) | sed -E 's/.*@//')"
     STUB_RUST_DIGEST="$( ( . "${root}/images/cistella/base/pins.sh" && printf '%s' "${RUST_IMAGE}" ) | sed -E 's/.*@//')"
-    export STUB_OC_VERSION STUB_CODEX_TAGS STUB_DEBIAN_DIGEST STUB_RUST_DIGEST
+    export STUB_OC_VERSION STUB_CODEX_TAGS STUB_PANDOC_TAG STUB_DEBIAN_DIGEST STUB_RUST_DIGEST
     local pair dist var key val
     for pair in "emcd-agents:EMCD_AGENTS_VERSION" "hatch:HATCH_VERSION" "pre-commit:PRE_COMMIT_VERSION" "copier:COPIER_VERSION" "agentmux:AGENTMUX_VERSION" "nbspec:NBSPEC_VERSION" "nb-mcp-server:NB_MCP_VERSION" "linecheck:LINECHECK_VERSION"; do
         dist="${pair%%:*}"; var="${pair##*:}"
@@ -636,13 +656,13 @@ CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 ok_labels=1
-for name in base opencode codex; do
+for name in base opencode codex muse opencode-pandoc; do
     id="$(local_id "${r}" "cistella/${name}:local")"
     want=""
     case "${name}" in
-        base) want="$(sha256sum "${r}/images/cistella/base/pins.sh" | cut -d' ' -f1)" ;;
-        opencode) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/opencode/pins.sh" | sha256sum | cut -d' ' -f1)" ;;
-        codex) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/codex/pins.sh" | sha256sum | cut -d' ' -f1)" ;;
+        base) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
+        opencode|codex|muse) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/${name}/pins.sh" "${r}/images/cistella/${name}/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
+        opencode-pandoc) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/opencode/pins.sh" "${r}/images/cistella/opencode/Containerfile" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
     esac
     got="$(grep -E "^${id}=" "${r}/state/imglabels" | cut -d= -f2-)"
     [[ "${got}" == "${want}" ]] || ok_labels=0
@@ -1337,6 +1357,168 @@ if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" \
     report ok "codex-schema-retries-then-skips"
 else
     report fail "codex-schema-retries-then-skips" "exit=${code} calls=${calls}"
+fi
+
+# 38. pandoc held within-series drift: notify-only, never bumped.
+r="$(new_case pandoc-held-series)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok STUB_PANDOC_TAG="3.1.14" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+no_builds=0
+[[ -s "${r}/state/buildlog" ]] || no_builds=1
+if [[ "${code}" == "0" && "${before_pins}" == "${after_pins}" && "${no_builds}" == "1" ]] \
+    && grep -q "held" "${r}/stdout" && grep -q "pandoc PANDOC_VERSION" "${r}/stdout"; then
+    report ok "pandoc-held-series-notify-only"
+else
+    report fail "pandoc-held-series-notify-only" "exit=${code}"
+fi
+code2="0"
+CURL_MODE=ok STUB_PANDOC_TAG="3.1.14" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+after_pins2="$(pins_sha "${r}")"
+no_builds2=0
+[[ -s "${r}/state/buildlog" ]] || no_builds2=1
+if [[ "${code2}" == "0" && "${before_pins}" == "${after_pins2}" && "${no_builds2}" == "1" ]] \
+    && grep -q "held" "${r}/stdout2"; then
+    report ok "pandoc-held-series-apply-noop"
+else
+    report fail "pandoc-held-series-apply-noop" "exit=${code2}"
+fi
+
+# 39. pandoc held above-series drift: notify-only, never bumped.
+r="$(new_case pandoc-held-above)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok STUB_PANDOC_TAG="3.13" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+no_builds=0
+[[ -s "${r}/state/buildlog" ]] || no_builds=1
+if [[ "${code}" == "0" && "${before_pins}" == "${after_pins}" && "${no_builds}" == "1" ]] \
+    && grep -q "held" "${r}/stdout" && grep -q "pandoc PANDOC_VERSION" "${r}/stdout"; then
+    report ok "pandoc-held-above-notify-only"
+else
+    report fail "pandoc-held-above-notify-only" "exit=${code}"
+fi
+code2="0"
+CURL_MODE=ok STUB_PANDOC_TAG="3.13" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+after_pins2="$(pins_sha "${r}")"
+no_builds2=0
+[[ -s "${r}/state/buildlog" ]] || no_builds2=1
+if [[ "${code2}" == "0" && "${before_pins}" == "${after_pins2}" && "${no_builds2}" == "1" ]] \
+    && grep -q "held" "${r}/stdout2"; then
+    report ok "pandoc-held-above-apply-noop"
+else
+    report fail "pandoc-held-above-apply-noop" "exit=${code2}"
+fi
+
+# 40. opencode-only drift rebuilds opencode then the lane; held pin untouched.
+r="$(new_case pandoc-inherited-opencode)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+# shellcheck disable=SC1091
+got_pandoc="$( ( . "${r}/images/cistella/opencode-pandoc/pins.sh" && printf '%s' "${PANDOC_VERSION}" ) )"
+oc_line="$(grep -n '^build cistella/opencode:local' "${r}/state/buildlog" | head -1 | cut -d: -f1)"
+lane_line="$(grep -n '^build cistella/opencode-pandoc:local' "${r}/state/buildlog" | head -1 | cut -d: -f1)"
+if [[ "${code}" == "0" && -n "${oc_line}" && -n "${lane_line}" \
+    && "${oc_line}" -lt "${lane_line}" && "${got_pandoc}" == "3.1.13" ]] \
+    && ! grep -q '^build cistella/base:local' "${r}/state/buildlog"; then
+    report ok "pandoc-inherited-opencode-rebuild"
+else
+    report fail "pandoc-inherited-opencode-rebuild" "exit=${code} pandoc=${got_pandoc}"
+fi
+
+# 41. base-only drift rebuilds everything, lane last.
+r="$(new_case pandoc-inherited-base)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_DEBIAN_DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+builds="$(grep -c '^build ' "${r}/state/buildlog")"
+first="$(grep '^build ' "${r}/state/buildlog" | head -1)"
+last="$(grep '^build ' "${r}/state/buildlog" | tail -1)"
+all_present=1
+for n in base opencode codex muse opencode-pandoc; do
+    grep -q "^build cistella/${n}:local" "${r}/state/buildlog" || all_present=0
+done
+if [[ "${code}" == "0" && "${builds}" == "5" && "${all_present}" == "1" \
+    && "${first}" == "build cistella/base:local label="* \
+    && "${last}" == "build cistella/opencode-pandoc:local label="* ]]; then
+    report ok "pandoc-inherited-base-rebuilds-all"
+else
+    report fail "pandoc-inherited-base-rebuilds-all" "exit=${code} builds=${builds}"
+fi
+
+# 42. lane parent build failure: opencode fails, lane never builds.
+r="$(new_case lane-parent-fail)"
+seed_images "${r}"
+current_versions_env "${r}"
+echo 2 > "${r}/state/fail_build_n"
+code="0"
+PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" PODMAN_STATE="${r}/state" \
+    XDG_RUNTIME_DIR="${r}" ./scripts/build-image opencode-pandoc \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" != "0" ]] \
+    && grep -q '^build cistella/opencode:local' "${r}/state/buildlog" \
+    && ! grep -q '^build cistella/opencode-pandoc' "${r}/state/buildlog"; then
+    report ok "lane-parent-fail-no-child"
+else
+    report fail "lane-parent-fail-no-child" "exit=${code}"
+fi
+
+# 43. lane validation failure restores the full closure.
+r="$(new_case lane-validate-fail)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+before_base_id="$(local_id "${r}" 'cistella/base:local')"
+before_oc_id="$(local_id "${r}" 'cistella/opencode:local')"
+before_lane_id="$(local_id "${r}" 'cistella/opencode-pandoc:local')"
+touch "${r}/state/fail_run"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+rm -f "${r}/state/fail_run"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" \
+    && "$(local_id "${r}" 'cistella/base:local')" == "${before_base_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:local')" == "${before_oc_id}" \
+    && "$(local_id "${r}" 'cistella/opencode-pandoc:local')" == "${before_lane_id}" \
+    && "$(local_id "${r}" 'cistella/opencode:previous')" == "${before_oc_id}" \
+    && "$(local_id "${r}" 'cistella/opencode-pandoc:previous')" == "${before_lane_id}" \
+    && -z "$(local_id "${r}" 'cistella/base:previous')" ]]; then
+    report ok "lane-validate-fail-restores-closure"
+else
+    report fail "lane-validate-fail-restores-closure" "exit=${code}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

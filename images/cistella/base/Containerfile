@@ -144,6 +144,8 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         file \
+        fontconfig \
+        fonts-dejavu-core \
         git \
         git-lfs \
         libevent-2.1-7t64 \
