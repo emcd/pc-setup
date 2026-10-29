@@ -1,0 +1,11 @@
+[Unit]
+Description=pc-setup image refresh (apply drift, holds notify-only)
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/src/pc-setup
+ExecStart=%h/src/pc-setup/scripts/refresh-images --apply
+StandardOutput=journal
+StandardError=journal
+Environment=PATH=%h/.local/share/mise/shims:%h/.cargo/bin:%h/.local/bin:%h/.local/share/npm-packages/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

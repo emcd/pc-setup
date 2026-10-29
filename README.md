@@ -34,9 +34,11 @@ PyPI stable tracks the highest eligible stable proven from the release
 list (non-dev, non-yanked with files), never bare `info.version`;
 `emcd-agents` tracks the highest non-dev, non-yanked release by PEP 440
 ordering. Crates use SemVer-correct numeric ranking with prereleases
-excluded (PEP 440 misreads tags like `1.2.3-1`). `PRE_COMMIT_VERSION` is on the notify-only
-HOLD list (reported every run, never bumped): its bumps must coordinate
-`.pre-commit-config.yaml` updates across projects.
+excluded (PEP 440 misreads tags like `1.2.3-1`). `PRE_COMMIT_VERSION` and
+the lane image's `PANDOC_VERSION` are on the notify-only HOLD list
+(reported every run, never bumped): pre-commit bumps must coordinate
+`.pre-commit-config.yaml` updates across projects, and the pandoc pin
+follows the 3.1 series by explicit both-teams decision.
 
 - `refresh-images check` — report drift. Exit `0` clean and converged,
   `1` completed check that found work to do or state unknown (upstream
@@ -48,11 +50,14 @@ HOLD list (reported every run, never bumped): its bumps must coordinate
   strictly read-only: it never writes pins, tags, builds, or runs,
   even when images are stale — that is what `--apply` is for.
 - `refresh-images --apply` — snapshot pins, bump them, preserve `:previous`
-  tags, rebuild stale images `--no-cache` (base, then harnesses), validate
+  tags, rebuild stale images `--no-cache` in dependency order (base,
+  then harnesses, then the lane image), validate
   each. Staleness comes from a `pc-setup.refresh-pins` label stamped at
-  build time, so retry after a failure (or apply after a rollback)
+  build time covering each image's pins *and* Containerfile plus every
+  ancestor's, so recipe-only changes mark descendants stale and retry
+  after a failure (or apply after a rollback)
   converges instead of exiting clean. Any build/validate failure restores
-  exact pin bytes plus tags and exits `2`. Concurrent runs are serialized
+  exact pin bytes plus tags (the affected closure) and exits `2`. Concurrent runs are serialized
   with a lock file; a second mutator is refused, never queued.
 - `refresh-images --rollback [target]` — re-tag `:previous` over `:local`
   (images only; revert pins with `git`). Preflights every selected
@@ -62,6 +67,21 @@ Rollout is always manual: after `:local` moves, recreate seats through the
 coordinator. `scripts/test-refresh-images` covers the failure paths with
 stubbed `curl`/`podman` (exit contract, pin/tag restoration, retry
 convergence, lock contention, rollback preflight).
+
+### Daily refresh timer
+
+`refresh-cistella-images.service` runs `refresh-images --apply` once a
+day (`refresh-cistella-images.timer`, `OnCalendar=daily`,
+`Persistent=true`); both ship in `configuration/systemd/user/` and
+deploy with `scripts/deploy-agentmux-host-config`, but enabling the
+timer is an explicit operator action
+(`systemctl --user enable --now refresh-cistella-images.timer`).
+The policy needs no timer-specific logic: `--apply` auto-applies
+everything except the notify-only HOLD list, and anything held still
+needs operator approval before it moves. Two obligations stay manual:
+committing the applied pin changes (`git diff`, review, commit — the
+timer never commits) and recreating seats through the coordinator.
+Inspect runs with `journalctl --user -u refresh-cistella-images.service`.
 
 The canonical installer is the shared target for global agent CLI installation
 and is intended to avoid duplicated installer logic across repositories.
