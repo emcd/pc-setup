@@ -52,6 +52,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v ps)" = "/usr/bin/ps"
         test "$(command -v pip3)" = "/usr/bin/pip3"
         test "$(command -v pre-commit)" = "/usr/local/bin/pre-commit"
+        test "$(command -v python)" = "/usr/bin/python"
         test "$(command -v python3)" = "/usr/bin/python3"
         test "$(command -v rg)" = "/usr/bin/rg"
         test "$(command -v ssh-keygen)" = "/usr/bin/ssh-keygen"
