@@ -31,7 +31,7 @@ AGENTMUX_CONFIGURATION_DIRECTORY = '{{core:container-home}}/.config/agentmux'
 CARGO_HOME = '{{core:container-home}}/.cargo'
 EDITOR = 'nano'
 GH_CONFIG_DIR = '{{core:container-home}}/.config/gh'
-PATH = '{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+PATH = '{{core:container-home}}/.local/bin:{{core:container-home}}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 TMUX = '{{core:container-home}}/.local/state/agentmux/bundles/{{supplement:bundle-name}}/tmux.sock,0,0'
 
 ## Container State (in-container taxonomy)
@@ -94,6 +94,14 @@ mode = 'rw'
 [[mounts]]
 host-source = '~/.cache/cistella/in-container/rustup'
 container-target = '{{core:container-home}}/.rustup'
+mode = 'rw'
+
+# Seat-persistent ~/.local/bin: installers drop executables here;
+# the host dir survives seat recreation while the tmpfs home does
+# not. Same in-container-tree pattern as the rustup guest tree.
+[[mounts]]
+host-source = '~/.cache/cistella/in-container/local-bin'
+container-target = '{{core:container-home}}/.local/bin'
 mode = 'rw'
 
 ## Agentmux (shared host config/state)

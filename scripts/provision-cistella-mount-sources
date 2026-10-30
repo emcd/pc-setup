@@ -59,3 +59,8 @@ provision_directory "${data_home}/cistella/in-container/opentui"
 # baseline; update together.
 provision_directory "${cache_home}/cistella/in-container/rustup"
 seed_rustup_toolchain "1.98.0"
+
+# Seat-persistent ~/.local/bin: installers drop executables here and the
+# host dir survives seat recreation while the tmpfs home does not. Plain
+# dir, no seeding -- contents are the seats' own installs.
+provision_directory "${cache_home}/cistella/in-container/local-bin"
