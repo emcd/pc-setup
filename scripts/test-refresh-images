@@ -957,7 +957,7 @@ r="$(new_case pypi-prerelease)"
 seed_images "${r}"
 current_versions_env "${r}"
 code="0"
-CURL_MODE=ok STUB_PYPI_EXTRA_EMCD_AGENTS="1.0a16" STUB_PYPI_YANKED_EMCD_AGENTS="1.0a17" \
+CURL_MODE=ok STUB_PYPI_EXTRA_EMCD_AGENTS="1.0a19" STUB_PYPI_YANKED_EMCD_AGENTS="1.0a20" \
     STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
     STUB_OC_V="1.19.0" STUB_CODEX_V="0.156.0" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
@@ -965,7 +965,7 @@ CURL_MODE=ok STUB_PYPI_EXTRA_EMCD_AGENTS="1.0a16" STUB_PYPI_YANKED_EMCD_AGENTS="
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 # shellcheck disable=SC1091
 got_emcd="$( ( . "${r}/images/cistella/base/pins.sh" && printf '%s' "${EMCD_AGENTS_VERSION}" ) )"
-if [[ "${code}" == "0" && "${got_emcd}" == "1.0a16" ]]; then
+if [[ "${code}" == "0" && "${got_emcd}" == "1.0a19" ]]; then
     report ok "pypi-prerelease-selection"
 else
     report fail "pypi-prerelease-selection" "exit=${code} emcd=${got_emcd}"

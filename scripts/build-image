@@ -43,12 +43,11 @@ build_one() {
     local line
 
     build_args+=("$@")
-    if [[ "${name}" == "base" ]]; then
-        # Self-stamp so refresh automation can tell images built from
-        # current pins apart from stale ones. Extra --label args apply
-        # to the requested target only, never to this implicit base tag.
-        build_args+=(--label "pc-setup.refresh-pins=$(sha256sum "${pins_file}" | cut -d' ' -f1)")
-    fi
+    # No self-stamp: the refresh fingerprint covers pins plus the
+    # Containerfile closure, so no pins-only label could ever match it.
+    # Standalone builds leave images unlabeled (like every harness
+    # target) and the next refresh converges them; an explicit --label
+    # passed by a caller is the only stamped form.
     while IFS= read -r line || [[ -n "${line}" ]]; do
         line="${line%%#*}"
         line="${line#"${line%%[![:space:]]*}"}"
