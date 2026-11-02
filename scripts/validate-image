@@ -66,6 +66,10 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
     '
 
 podman run --rm --userns=keep-id "${image_tag}" cc --version >/dev/null
+podman run --rm --userns=keep-id "${image_tag}" \
+    sh -c 'test -f /etc/profile.d/seat-path.sh'
+podman run --rm --userns=keep-id "${image_tag}" \
+    sh -c 'mkdir -p /tmp/seatprobe/.cargo/bin /tmp/seatprobe/.local/bin && printf "#!/bin/sh\necho probe-ok\n" > /tmp/seatprobe/.local/bin/probe-tool && chmod +x /tmp/seatprobe/.local/bin/probe-tool && env -i HOME=/tmp/seatprobe /bin/bash -lc "command -v probe-tool"'
 podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
     sh -c 'fc-list | grep --quiet "DejaVu Sans" && fc-list | grep --quiet "DejaVu Sans Mono"'
 podman run --rm --userns=keep-id "${image_tag}" tmux -V | grep --quiet "${TMUX_VERSION}"

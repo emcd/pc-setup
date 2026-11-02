@@ -173,5 +173,7 @@ RUN apt-get update \
     && mkdir --parents /usr/share/terminfo/x \
     && ln --symbolic ../g/ghostty /usr/share/terminfo/x/xterm-ghostty
 
+COPY profile.d/seat-path.sh /etc/profile.d/seat-path.sh
+
 COPY --from=builder /usr/local /usr/local
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
