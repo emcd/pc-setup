@@ -1,0 +1,19 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'librovore-o'
+project-name = 'python-librovore'
+name = 'Librovore Owner'
+directory = '/home/me/src/python-librovore'
+coder = 'opencode'
+coder-session-id = 'ses_e50ff7f02ffen5WYkYC9jwP5PR'
+
+[[sessions]]
+id = 'mimeogram-o'
+project-name = 'python-mimeogram'
+name = 'Mimeogram Owner'
+directory = '/home/me/src/python-mimeogram'
+coder = 'opencode'
+coder-session-id = 'ses_e4e986f28ffeOlW7OTiX4fNc2Y'

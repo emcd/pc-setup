@@ -4,132 +4,176 @@ autostart = false
 
 [[sessions]]
 id = 'coordinator'
+project-name = 'litrpg'
 name = 'Coordinator'
 directory = '/home/me/src/litrpg'
-coder = 'opencode'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_22457d829ffef056e5JXZc7kfO'
 
 [[sessions]]
-id = 'editor'
-name = 'Editor General'
-directory = '/home/me/src/WORKTREES/litrpg/editor'
-coder = 'opencode'
+id = 'advisor'
+project-name = 'litrpg'
+name = 'Advisor'
+directory = '/home/me/src/CLONES/litrpg/advisor'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_15bf5be4cffe54HppNdhj0LTLk'
 
 [[sessions]]
 id = 'backend'
+project-name = 'litrpg'
 name = 'Backend Tech Lead'
-directory = '/home/me/src/WORKTREES/litrpg/backend'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/backend'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_12d2741beffeMrkGRzLf91e1hP'
 
 [[sessions]]
 id = 'frontend'
+project-name = 'litrpg'
 name = 'Frontend Tech Lead'
-directory = '/home/me/src/WORKTREES/litrpg/frontend'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/frontend'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_12d1fc9b7ffe81tuF0OzSGVEiq'
 
 [[sessions]]
 id = 'data-models'
+project-name = 'litrpg'
 name = 'Chief Ontologist'
-directory = '/home/me/src/WORKTREES/litrpg/data-models'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/data-models'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_12d193692ffeeWcEGSIWrPjDry'
 
 [[sessions]]
 id = 'maps'
+project-name = 'litrpg'
 name = 'Chief Cartographer'
-directory = '/home/me/src/WORKTREES/litrpg/maps'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/maps'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_12d136c9bffeyB3fxM1CSmoc0s'
 
 [[sessions]]
 id = 'be-reviewer'
+project-name = 'litrpg'
 name = 'Backend Reviewer'
-directory = '/home/me/src/WORKTREES/litrpg/be-reviewer'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/be-reviewer'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_205e1a371ffedoax9dK3VEHGUB'
 
 [[sessions]]
 id = 'fe-reviewer'
+project-name = 'litrpg'
 name = 'Frontend Reviewer'
-directory = '/home/me/src/WORKTREES/litrpg/fe-reviewer'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/fe-reviewer'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_20496c513ffeub1hfMR6Q4nDbG'
 
 [[sessions]]
 id = 'dm-reviewer'
+project-name = 'litrpg'
 name = 'Data Models Reviewer'
-directory = '/home/me/src/WORKTREES/litrpg/dm-reviewer'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/dm-reviewer'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_1ff3a5815ffe1yCORlI2z89pba'
 
 [[sessions]]
 id = 'maps-reviewer'
+project-name = 'litrpg'
 name = 'Maps Reviewer'
-directory = '/home/me/src/WORKTREES/litrpg/maps-reviewer'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/maps-reviewer'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_1fee300bbffeQvM5ITDjlIUQAQ'
 
 [[sessions]]
 id = 'agents'
+project-name = 'litrpg'
 name = 'Agents Engineer'
-directory = '/home/me/src/WORKTREES/litrpg/agents'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/agents'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2b450143fffe2IDlsQubs3KsYm'
 
 [[sessions]]
 id = 'engine'
+project-name = 'litrpg'
 name = 'BE Engine'
-directory = '/home/me/src/WORKTREES/litrpg/engine'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/engine'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_26b7992cfffeJTe8zRWz3YMKRy'
 
 [[sessions]]
 id = 'gameplay'
+project-name = 'litrpg'
 name = 'BE Gameplay'
-directory = '/home/me/src/WORKTREES/litrpg/gameplay'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/gameplay'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2b44cd6d2ffeghcWG1r590ux6H'
 
 [[sessions]]
 id = 'workflows'
+project-name = 'litrpg'
 name = 'BE Workflows'
-directory = '/home/me/src/WORKTREES/litrpg/workflows'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/workflows'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2b44332aaffe3TEJqEgNSU60QU'
 
 [[sessions]]
 id = 'assets'
+project-name = 'litrpg'
 name = 'Assets Engineer'
-directory = '/home/me/src/WORKTREES/litrpg/assets'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/assets'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_137997f36ffe98V9WkYFCjSSs5'
 
 [[sessions]]
 id = 'handbook'
+project-name = 'litrpg'
 name = 'DE Handbook'
-directory = '/home/me/src/WORKTREES/litrpg/handbook'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/handbook'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2583071b1ffeC16ohTlP4RHWm5'
 
 [[sessions]]
 id = 'dm-kinds'
+project-name = 'litrpg'
 name = 'DM Kinds'
-directory = '/home/me/src/WORKTREES/litrpg/dm-kinds'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/dm-kinds'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2102ad895ffe4oNVMJ3imtLb7Q'
 
 [[sessions]]
 id = 'tui'
+project-name = 'litrpg'
 name = 'FE TUI'
-directory = '/home/me/src/WORKTREES/litrpg/tui'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/tui'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_2587646b5ffejALPfeDpzRIKh9'
 
 [[sessions]]
 id = 'web'
+project-name = 'litrpg'
 name = 'FE Web'
-directory = '/home/me/src/WORKTREES/litrpg/web'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/web'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_1f84d429cffeZ5L0W24Zo8cA4K'
 
 [[sessions]]
 id = 'maps-curation'
+project-name = 'litrpg'
 name = 'Maps Curation'
-directory = '/home/me/src/WORKTREES/litrpg/maps-curation'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/maps-curation'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_25805279dffeEEvT7uwBaGTjJa'
 
 [[sessions]]
 id = 'maps-interaction'
+project-name = 'litrpg'
 name = 'Maps Interaction'
-directory = '/home/me/src/WORKTREES/litrpg/maps-interaction'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/maps-interaction'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_257ee3d11ffecd2sg2l3pjqs8Q'
 
 [[sessions]]
 id = 'maps-procgen'
+project-name = 'litrpg'
 name = 'Maps Procgen'
-directory = '/home/me/src/WORKTREES/litrpg/maps-procgen'
-coder = 'opencode'
+directory = '/home/me/src/CLONES/litrpg/maps-procgen'
+coder = 'opencode--litrpg'
+coder-session-id = 'ses_258146633ffeDGFG3Tow56Rc1M'

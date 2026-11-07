@@ -6,64 +6,89 @@ autostart = false
 id = 'coordinator'
 name = 'Coordinator'
 directory = '/home/me/src/home'
-coder = 'opencode'
+coder = 'opencode--fleet-coordinator'
+coder-session-id = 'ses_1458191a5ffeamz2mIX7lYUNKD'
 
 [[sessions]]
 id = 'advisor'
+project-name = 'home'
 name = 'Advisor'
-directory = '/home/me/src/WORKTREES/home/advisor'
+directory = '/home/me/src/CLONES/home/advisor'
 coder = 'opencode'
+coder-session-id = 'ses_1e1583addffeZm0agvQPKaEWzg'
 
 [[sessions]]
 id = 'reviewer'
+project-name = 'home'
 name = 'Reviewer General'
-directory = '/home/me/src/WORKTREES/home/infras-reviewer'
+directory = '/home/me/src/CLONES/home/infras-reviewer'
 coder = 'opencode'
+coder-session-id = 'ses_1e09e61c2ffeivUj7D282EswRQ'
 
 [[sessions]]
-id = 'agents'
+id = 'agents-o'
 name = 'Agents Owner'
 directory = '/home/me/src/agents-common'
 coder = 'opencode'
+coder-session-id = 'ses_16e66db10ffefGF3hqcH3LLrtU'
 
 [[sessions]]
-id = 'cistella'
+id = 'cistella-o'
 name = 'Cistella Owner'
 directory = '/home/me/src/cistella'
-coder = 'opencode'
+coder = 'opencode--cistella-maintainer'
+coder-session-id = 'ses_1096659c3ffeOrdY6ugTa2uJGE'
 
 [[sessions]]
 id = 'cistella-qa'
+project-name = 'cistella'
 name = 'Cistella QA Partner'
 directory = '/home/me/src/CLONES/cistella/qa'
-coder = 'cistella-opencode'
+coder = 'opencode--host-maintainer'
+coder-session-id = 'ses_f583ebf52ffecM7OkRwc1rpwYq'
 
 [[sessions]]
-id = 'dispositor'
+id = 'dispositor-o'
 name = 'Dispositor Owner'
 directory = '/home/me/src/dispositor'
 coder = 'opencode'
+coder-session-id = 'ses_192c5d48ffferUfDTN089Fr2Tt'
 
 [[sessions]]
-id = 'mysite'
+id = 'documentation-o'
+name = 'Documentation Owner'
+directory = '/home/me/src/documentation-common'
+coder = 'opencode'
+coder-session-id = 'ses_ed89e7063ffe6mPKJ8rx8JfCZZ'
+
+[[sessions]]
+id = 'mysite-o'
 name = 'Weblog Owner'
 directory = '/home/me/src/mysite'
 coder = 'opencode'
+coder-session-id = 'ses_1e0844710ffec76f1DmYt6owSI'
 
 [[sessions]]
-id = 'pc-setup'
+id = 'pc-setup-o'
+project-name = 'pc-setup'
 name = 'PC Setup Owner'
 directory = '/home/me/src/pc-setup'
-coder = 'opencode'
+# coder = 'muse'
+# coder-session-id = '01a14d26-6e4d-7ee0-bacc-296d7159d74f'
+coder = 'opencode--host-maintainer'
+coder-session-id = 'ses_1e480458bffepgioJsTeiyRCQA'
 
 [[sessions]]
-id = 'praetor'
+id = 'praetor-o'
 name = 'Praetor Owner'
 directory = '/home/me/src/praetor'
 coder = 'opencode'
+coder-session-id = 'ses_0ab3acd56ffe7YaL21JmjC2fl3'
 
 [[sessions]]
-id = 'repositor'
+id = 'repositor-o'
+project-name = 'gh-repositor'
 name = 'Repositories Owner'
 directory = '/home/me/src/gh-repositor'
 coder = 'opencode'
+coder-session-id = 'ses_1e49c66cdffejULKf23SWODCui'

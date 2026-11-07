@@ -7,33 +7,39 @@ id = 'fleet-advisor'
 name = 'Fleet Advisor'
 directory = '/home/me/src/WORKTREES/home/advisor'
 coder = 'claude'
+coder-session-id = '71b625bb-865e-4f5f-ac5b-7cecc920352b'
 
 [[sessions]]
 id = 'agentmux-advisor'
 name = 'Agentmux Advisor'
 directory = '/home/me/src/WORKTREES/agentmux/advisor'
 coder = 'claude'
+coder-session-id = 'fd14b2a1-968c-426f-8b29-15c3fc7e59ee'
 
 [[sessions]]
 id = 'agentmux-agents'
 name = 'Agentmux Agents Engineer'
 directory = '/home/me/src/WORKTREES/agentmux/agents'
 coder = 'claude'
+coder-session-id = '79b983d6-d70c-4d42-a8a8-a1d52e57dc24'
 
 [[sessions]]
 id = 'agentmux-backend'
 name = 'Agentmux Backend Engineer'
 directory = '/home/me/src/WORKTREES/agentmux/backend'
 coder = 'claude'
+coder-session-id = '1cf7745e-7ea1-47d4-9a9c-9e0d680c384e'
 
 [[sessions]]
 id = 'agentmux-frontend'
 name = 'Agentmux Frontend Engineer'
 directory = '/home/me/src/WORKTREES/agentmux/frontend'
 coder = 'claude'
+coder-session-id = 'e6f93445-4c4f-4e7d-8035-9cc3ff86e093'
 
 [[sessions]]
 id = 'litrpg-advisor'
 name = 'Litrpg Advisor'
 directory = '/home/me/src/WORKTREES/litrpg/advisor'
 coder = 'claude'
+coder-session-id = '0c947e08-c3b5-44dc-a164-6fb196969b2b'

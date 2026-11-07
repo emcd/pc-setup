@@ -1,0 +1,27 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'reviewer'
+project-name = 'home'
+name = 'Reviewer General'
+directory = '/home/me/src/CLONES/home/rsf-reviewer'
+coder = 'opencode'
+coder-session-id = 'ses_f2a900592ffedPoBriZCaTZd2m'
+
+[[sessions]]
+id = 'template-o'
+project-name = 'rust-project-common'
+name = 'Template Owner'
+directory = '/home/me/src/rust-project-common'
+coder = 'opencode'
+coder-session-id = 'ses_f2a9da6a9ffe2n85T1nb4ncIYb'
+
+[[sessions]]
+id = 'approots-o'
+project-name = 'approots'
+name = 'Approots Owner'
+directory = '/home/me/src/approots'
+coder = 'muse'
+coder-session-id = '01a15240-871b-7913-97bd-48698432837b'

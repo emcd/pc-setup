@@ -4,30 +4,40 @@ autostart = false
 
 [[sessions]]
 id = 'coordinator'
+project-name = 'nb-mcp-server'
 name = 'Coordinator'
-directory = '/home/me/src/WORKTREES/nb-mcp-server/coordinator'
+directory = '/home/me/src/CLONES/nb-mcp-server/coordinator'
 coder = 'opencode'
+coder-session-id = 'ses_121dfaa2bffehs5aaDf2hxoFjb'
 
 [[sessions]]
 id = 'reviewer'
+project-name = 'nb-mcp-server'
 name = 'Reviewer General'
-directory = '/home/me/src/WORKTREES/nb-mcp-server/reviewer'
+directory = '/home/me/src/CLONES/nb-mcp-server/reviewer'
 coder = 'opencode'
+coder-session-id = 'ses_1e06526b0ffe6L7IS1pted3ELf'
 
 [[sessions]]
-id = 'nb-api'
+id = 'nb-api-o'
+project-name = 'nb-api'
 name = 'NbApi Owner'
 directory = '/home/me/src/nb-api'
 coder = 'opencode'
+coder-session-id = 'ses_0d10ad598ffezHimCbpdgP7DXH'
 
 [[sessions]]
-id = 'nb-mcp'
+id = 'nb-mcp-o'
+project-name = 'nb-mcp-server'
 name = 'NbMcp Owner'
 directory = '/home/me/src/nb-mcp-server'
 coder = 'opencode'
+coder-session-id = 'ses_122f3cd37ffeBMFYWXpnG9A9CU'
 
 [[sessions]]
-id = 'nbspec'
+id = 'nbspec-o'
+project-name = 'nbspec'
 name = 'Nbspec Owner'
 directory = '/home/me/src/nbspec'
 coder = 'opencode'
+coder-session-id = 'ses_0cf5de614ffevGZZtVfB9zIm7T'

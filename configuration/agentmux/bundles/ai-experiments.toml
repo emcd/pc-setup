@@ -4,24 +4,32 @@ autostart = false
 
 [[sessions]]
 id = 'coordinator'
+project-name = 'ai-experiments'
 name = 'Coordinator'
 directory = '/home/me/src/ai-experiments'
 coder = 'opencode'
+coder-session-id = 'ses_20a7adcc9ffeYTt4vuyvcfZ2gX'
 
 [[sessions]]
 id = 'providers'
+project-name = 'ai-experiments'
 name = 'BE Providers'
-directory = '/home/me/src/WORKTREES/ai-experiments/providers'
+directory = '/home/me/src/CLONES/ai-experiments/providers'
 coder = 'opencode'
+coder-session-id = 'ses_0fd81ef9cffe1cTaPOCN1vpjUp'
 
 [[sessions]]
 id = 'web'
+project-name = 'ai-experiments'
 name = 'FE Web'
-directory = '/home/me/src/WORKTREES/ai-experiments/web'
+directory = '/home/me/src/CLONES/ai-experiments/web'
 coder = 'opencode'
+coder-session-id = 'ses_0fd812d30ffedMbCH6rJt1EsCl'
 
 [[sessions]]
 id = 'invocables'
+project-name = 'ai-experiments'
 name = 'BE Invocables'
-directory = '/home/me/src/WORKTREES/ai-experiments/invocables'
+directory = '/home/me/src/CLONES/ai-experiments/invocables'
 coder = 'opencode'
+coder-session-id = 'ses_0fd8337d1ffeneTTkaG3nHQWL8'

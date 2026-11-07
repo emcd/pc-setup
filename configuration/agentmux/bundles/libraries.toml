@@ -1,0 +1,11 @@
+format-version = 1
+
+autostart = false
+
+[[sessions]]
+id = 'detextive-o'
+project-name = 'python-detextive'
+name = 'Detextive Owner'
+directory = '/home/me/src/python-detextive'
+coder = 'opencode'
+coder-session-id = 'ses_e51a16bebffeiBhDNebncgN40j'

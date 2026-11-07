@@ -4,66 +4,88 @@ autostart = false
 
 [[sessions]]
 id = 'reviewer'
+project-name = 'home'
 name = 'Reviewer General'
-directory = '/home/me/src/WORKTREES/home/pyf-reviewer'
+directory = '/home/me/src/CLONES/home/pyf-reviewer'
 coder = 'opencode'
+coder-session-id = 'ses_1e4befbc7ffe4bADdbH50HSGrg'
 
 [[sessions]]
-id = 'template'
+id = 'template-o'
+project-name = 'python-project-common'
 name = 'Template Owner'
 directory = '/home/me/src/python-project-common'
 coder = 'opencode'
+coder-session-id = 'ses_13e58a1c5ffeq3iJmz5bmfS27Y'
 
 [[sessions]]
-id = 'absence'
+id = 'absence-o'
+project-name = 'python-absence'
 name = 'Absence Owner'
 directory = '/home/me/src/python-absence'
 coder = 'opencode'
+coder-session-id = 'ses_185de7eb6ffecgqWxfPjjBn8p1'
 
 [[sessions]]
-id = 'accretive'
+id = 'accretive-o'
+project-name = 'python-accretive'
 name = 'Accretive Owner'
 directory = '/home/me/src/python-accretive'
 coder = 'opencode'
+coder-session-id = 'ses_185bf8a78ffeZEzp7lJiKVLcFo'
 
 [[sessions]]
-id = 'appcore'
+id = 'appcore-o'
+project-name = 'python-appcore'
 name = 'Appcore Owner'
 directory = '/home/me/src/python-appcore'
 coder = 'opencode'
+coder-session-id = 'ses_18492e480ffePb8knGgOUSoQc3'
 
 [[sessions]]
-id = 'classcore'
+id = 'classcore-o'
+project-name = 'python-classcore'
 name = 'Classcore Owner'
 directory = '/home/me/src/python-classcore'
 coder = 'opencode'
+coder-session-id = 'ses_188524dedffeIw25m7Itj77uzX'
 
 [[sessions]]
-id = 'dynadoc'
+id = 'dynadoc-o'
+project-name = 'python-dynadoc'
 name = 'Dynadoc Owner'
 directory = '/home/me/src/python-dynadoc'
 coder = 'opencode'
+coder-session-id = 'ses_18f05c330ffeem8nvOt6HAHHQm'
 
 [[sessions]]
-id = 'falsifier'
+id = 'falsifier-o'
+project-name = 'python-falsifier'
 name = 'Falsifier Owner'
 directory = '/home/me/src/python-falsifier'
 coder = 'opencode'
+coder-session-id = 'ses_188358470ffeeqn1tTYxLCYYb1'
 
 [[sessions]]
-id = 'frigid'
+id = 'frigid-o'
+project-name = 'python-frigid'
 name = 'Frigid Owner'
 directory = '/home/me/src/python-frigid'
 coder = 'opencode'
+coder-session-id = 'ses_184e96806ffeAD1zSmb5Hwwsyw'
 
 [[sessions]]
-id = 'ictr'
+id = 'ictr-o'
+project-name = 'python-ictr'
 name = 'Ictr Owner'
 directory = '/home/me/src/python-ictr'
 coder = 'opencode'
+coder-session-id = 'ses_184c8c1c2ffegDSlPWG8V9PJrJ'
 
 [[sessions]]
-id = 'scent'
+id = 'scent-o'
+project-name = 'python-scent'
 name = 'Scent Owner'
 directory = '/home/me/src/python-scent'
 coder = 'opencode'
+coder-session-id = 'ses_0b5384262ffexQgcIpP98iqeSe'

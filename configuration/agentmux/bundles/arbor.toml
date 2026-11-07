@@ -4,30 +4,40 @@ autostart = false
 
 [[sessions]]
 id = 'lead'
+project-name = 'arbor'
 name = 'Lead (Coordinator)'
 directory = '/home/me/src/arbor'
 coder = 'opencode'
+coder-session-id = 'ses_fcf0c7075ffeHQufFoYQCN05qz'
 
 [[sessions]]
 id = 'architect'
+project-name = 'arbor'
 name = 'Architect'
 directory = '/home/me/src/CLONES/arbor/architect'
 coder = 'opencode'
+coder-session-id = 'ses_fce83f381ffeTTTIpH1sFtfTvG'
 
 [[sessions]]
 id = 'compiler'
+project-name = 'arbor'
 name = 'Compiler Engineer'
 directory = '/home/me/src/CLONES/arbor/compiler'
 coder = 'opencode'
+coder-session-id = 'ses_fce83e876ffefYdalxUoasgwuU'
 
 [[sessions]]
 id = 'qa'
+project-name = 'arbor'
 name = 'QA Engineer'
 directory = '/home/me/src/CLONES/arbor/qa'
 coder = 'opencode'
+coder-session-id = 'ses_fce83dfcfffe1sQTHi0kcyfPSs'
 
 [[sessions]]
 id = 'tooling'
+project-name = 'arbor'
 name = 'Tooling Engineer'
 directory = '/home/me/src/CLONES/arbor/tooling'
 coder = 'opencode'
+coder-session-id = 'ses_fce83d642ffes8H0yImtWL2m7s'
