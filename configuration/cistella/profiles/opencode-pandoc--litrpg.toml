@@ -1,6 +1,6 @@
 # OpenCode: LitRPG development seat (standard seat + shared engine state)
 
-image = 'cistella/opencode:local'
+image = 'cistella/opencode-pandoc:local'
 container-home = '{{environment:HOME}}'
 command = ['opencode', '--standalone']
 environment-acceptances = [
