@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+#
+# Opt-in host setup for Windows games on ARM64 Linux via Valve Proton.
+#
+# Provenance: Gloomhaven (GOG offline installer, Unity DX11) running under
+# the Canonical Steam snap (stable) with Proton 11 on an NVIDIA DGX Spark
+# (GB10, aarch64). This script is intentionally NOT part of ubuntu.bash:
+# gaming is opt-in, host-side, and irrelevant to seat images.
+#
+# What it does: installs the Steam snap (x86 Steam + FEX emulator,
+# Canonical-maintained, DGX Spark tested) and innoextract (unpacks GOG
+# InnoSetup offline installers natively, no emulation needed for install).
+# What it never does: touch nvidia-*/cuda-*/dgx-* packages, change drivers,
+# enable timers, or modify seat images. A guard snapshots the NVIDIA/DGX
+# package set before and after and fails loudly on any difference.
+#
+# Usage:
+#   scripts/setup-steam-arm64-gaming setup
+#   scripts/setup-steam-arm64-gaming extract <installer.exe> <dest-dir>
+#
+# The Steam-library steps (sign in, add non-Steam game, force Proton 11)
+# are UI actions; `setup` prints them as a closing checklist.
+
+set -eu -o pipefail
+
+guard_package_file="$( mktemp )"
+trap 'rm -f "${guard_package_file}"' EXIT
+
+snapshot_guard_packages() {
+    dpkg-query -W -f='${Package}\n' 'nvidia-*' 'cuda-*' 'dgx-*' 2>/dev/null \
+        | sort > "${guard_package_file}"
+}
+
+verify_guard_packages() {
+    if ! dpkg-query -W -f='${Package}\n' 'nvidia-*' 'cuda-*' 'dgx-*' 2>/dev/null \
+        | sort | cmp -s - "${guard_package_file}"; then
+        printf 'ERROR: NVIDIA/CUDA/DGX package set changed; aborting.\n' >&2
+        return 1
+    fi
+}
+
+require_aarch64() {
+    if [ "$( uname -m )" != 'aarch64' ]; then
+        printf 'ERROR: this supplement is ARM64-only (found %s).\n' "$( uname -m )" >&2
+        return 1
+    fi
+}
+
+cmd_setup() {
+    require_aarch64
+    snapshot_guard_packages
+
+    if ! snap list steam >/dev/null 2>&1; then
+        sudo snap install steam
+    else
+        printf 'Steam snap already installed; leaving it alone.\n'
+    fi
+
+    if ! command -v innoextract >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends innoextract
+    else
+        printf 'innoextract already installed; leaving it alone.\n'
+    fi
+
+    verify_guard_packages
+
+    if [ ! -e /dev/ntsync ]; then
+        printf 'NOTE: /dev/ntsync absent; Proton falls back to fsync/esync.\n'
+        printf 'If the ntsync module is available, `sudo modprobe ntsync` enables it (no driver change).\n'
+    fi
+
+    cat <<'CHECKLIST'
+
+Setup complete. Remaining steps are Steam UI actions:
+  1. Launch Steam (App Center) and sign in.
+  2. Games -> "Add a Non-Steam Game to My Library", browse to the
+     extracted game .exe (e.g. ~/Games/gloomhaven/GH.exe).
+  3. Right-click the entry -> Properties: confirm "Start In" points at
+     the game directory (Unity finds <name>_Data relative to it).
+  4. Properties -> Compatibility: tick "Force the use of a specific
+     Steam Play compatibility tool", pick Proton 11 (Stable).
+  5. Play. First launch is slow (Proton prefix + shader processing).
+
+If the game fails with bwrap "setting up uid map" errors:
+  echo 'kernel.apparmor_restrict_unprivileged_userns=0' \
+    | sudo tee /etc/sysctl.d/99-userns-apparmor.conf
+  sudo sysctl --system
+
+Tuning (tested, cheapest first): in-game vsync/FPS cap, lower
+resolution, borderless fullscreen. Heavier hammers held in reserve:
+the edge snap (FEX library forwarding/"thunking", cooler but less
+stable) and Proton-GE (better menu-video codec support).
+CHECKLIST
+}
+
+cmd_extract() {
+    if [ "${#}" -ne 2 ]; then
+        printf 'Usage: %s extract <installer.exe> <dest-dir>\n' "${0}" >&2
+        return 2
+    fi
+    require_aarch64
+    if ! command -v innoextract >/dev/null 2>&1; then
+        printf 'ERROR: innoextract missing; run `%s setup` first.\n' "${0}" >&2
+        return 1
+    fi
+    # GOG splits installers: one small .exe plus .bin parts, all in one
+    # directory. Pass the .exe; innoextract finds the parts itself.
+    mkdir -p "${2}"
+    innoextract -d "${2}" "${1}"
+}
+
+main() {
+    local subcommand="${1:-setup}"
+    case "${subcommand}" in
+        setup)   cmd_setup ;;
+        extract) shift; cmd_extract "${@}" ;;
+        *) printf 'Usage: %s {setup|extract}\n' "${0}" >&2; return 2 ;;
+    esac
+}
+
+main "${@}"
