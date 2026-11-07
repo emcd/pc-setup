@@ -111,6 +111,16 @@ RUN curl --fail --location --show-error --silent --output /tmp/openspec.tgz "${O
     && PATH="/usr/local/bin:${PATH}" npm install --global --prefix /usr/local /tmp/openspec.tgz \
     && rm /tmp/openspec.tgz
 
+ARG RELOADEROO_VERSION
+ARG RELOADEROO_URL
+ARG RELOADEROO_INTEGRITY
+RUN curl --fail --location --show-error --silent --output /tmp/reloaderoo.tgz "${RELOADEROO_URL}" \
+    && actual_b64="$(openssl dgst -sha512 -binary /tmp/reloaderoo.tgz | openssl base64 -A)" \
+    && expected_b64="${RELOADEROO_INTEGRITY#sha512-}" \
+    && test "${actual_b64}" = "${expected_b64}" \
+    && PATH="/usr/local/bin:${PATH}" npm install --global --prefix /usr/local /tmp/reloaderoo.tgz \
+    && rm /tmp/reloaderoo.tgz
+
 ARG NB_VERSION
 ARG NB_URL
 ARG NB_SHA256
