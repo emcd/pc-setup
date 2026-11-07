@@ -43,11 +43,14 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v nb-mcp)" = "/usr/local/bin/nb-mcp"
         test "$(command -v nb)" = "/usr/local/bin/nb"
         test "$(command -v column)" = "/usr/bin/column"
+        test "$(command -v curl)" = "/usr/bin/curl"
         test "$(command -v file)" = "/usr/bin/file"
         test "$(command -v gh)" = "/usr/local/bin/gh"
         test "$(command -v git)" = "/usr/bin/git"
         test "$(command -v git-lfs)" = "/usr/bin/git-lfs"
+        test "$(command -v jq)" = "/usr/bin/jq"
         test "$(command -v linecheck)" = "/usr/local/bin/linecheck"
+        test "$(command -v lsof)" = "/usr/bin/lsof"
         test "$(command -v nano)" = "/usr/bin/nano"
         test "$(command -v ps)" = "/usr/bin/ps"
         test "$(command -v pip3)" = "/usr/bin/pip3"
@@ -61,6 +64,7 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v vibelinter)" = "/usr/local/bin/vibelinter"
         test "$(command -v tmux)" = "/usr/local/bin/tmux"
         test "$(command -v xxd)" = "/usr/bin/xxd"
+        test "$(command -v yq)" = "/usr/bin/yq"
         test -x /usr/bin/cc
     '
 

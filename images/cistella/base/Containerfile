@@ -153,15 +153,18 @@ RUN apt-get update \
         bsdextrautils \
         build-essential \
         ca-certificates \
+        curl \
         file \
         fontconfig \
         fonts-dejavu-core \
         git \
         git-lfs \
+        jq \
         libevent-2.1-7t64 \
         libevent-core-2.1-7t64 \
         libncursesw6 \
         libssl-dev \
+        lsof \
         nano \
         ncurses-bin \
         openssh-client \
@@ -173,6 +176,7 @@ RUN apt-get update \
         python3-pip \
         ripgrep \
         xxd \
+        yq \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir --parents /usr/share/terminfo/x \
     && ln --symbolic ../g/ghostty /usr/share/terminfo/x/xterm-ghostty
