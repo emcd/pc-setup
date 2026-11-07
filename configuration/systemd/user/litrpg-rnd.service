@@ -1,0 +1,13 @@
+[Unit]
+Description=LitRPG game engine (authoritative state)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/litrpg
+ExecStart=%h/src/litrpg/target/release/litrpg-engine --state-directory %h/.local/state/litrpg-rnd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
