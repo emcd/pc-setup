@@ -64,3 +64,9 @@ seed_rustup_toolchain "1.98.0"
 # host dir survives seat recreation while the tmpfs home does not. Plain
 # dir, no seeding -- contents are the seats' own installs.
 provision_directory "${cache_home}/cistella/in-container/local-bin"
+
+# LitRPG shared engine state (opencode-litrpg.toml mounts): multiple seats
+# share one engine via the host state dir; config is mounted read-only.
+# Plain dirs, no seeding.
+provision_directory "${state_home}/litrpg-rnd"
+provision_directory "${config_home}/litrpg-rnd"
