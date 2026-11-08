@@ -6,8 +6,8 @@
 
 ## 2. Image
 
-- [ ] 2.1 Locate the throwaway clone (ref + custom-node set for v1 seed)
-- [ ] 2.2 Create `images/comfyui/Containerfile` (pinned ComfyUI ref, torch/CUDA pins with sha256, explicit custom-node list, no baked models)
+- [x] 2.1 v1 custom-node seed resolved: EMPTY set per Assets Engineer (klein 4B native core; Z-Image secondary)
+- [ ] 2.2 Create `images/comfyui/Containerfile` (pinned ComfyUI ref, torch/CUDA pins with sha256 supporting Blackwell + torchao NVFP4 against driver 580.x, no custom nodes v1, no baked models)
 - [ ] 2.3 Create `images/comfyui/pins.sh` (ref + checksums)
 - [ ] 2.4 Build, serve, GUI smoke test (GUI loads, queue runs to image)
 

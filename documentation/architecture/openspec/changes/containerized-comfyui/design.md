@@ -60,6 +60,12 @@ mounts the output dir into their seats; later, join `ai-apps` (name
 
 ## Open Questions
 
-- Which ComfyUI ref + custom-node set seeds v1 (migrate from the throwaway
-  clone — need its location/ref)?
-- Which torch/CUDA release line to pin (match host driver 580.x)?
+None from pc-setup. Resolved with Assets Engineer 2026-11-08: v1
+custom-node set is the EMPTY set (FLUX.2 klein 4B multi-reference is
+native core ComfyUI; Z-Image secondary; no manifest needs beyond core).
+Torch constraint: Blackwell + NVFP4 (torchao) against host driver 580.x;
+LitRPG will smoke-test the candidate image with a klein 4B load before
+pins finalize. Proposed host paths (pending their layout check):
+`~/.local/share/comfyui/models`, `~/.local/share/comfyui/output`
+(shared with LitRPG seats), `~/.local/share/comfyui/input`,
+`~/.local/share/comfyui/workflows` — created by the run helper.
