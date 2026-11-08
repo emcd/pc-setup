@@ -14,7 +14,7 @@
 ## 3. Run helper and docs
 
 - [ ] 3.1 Create `scripts/run-comfyui` (`--gpus all`, `-p 8188:8188`, host mounts, restart policy)
-- [ ] 3.2 Document the GUI workflow and the trusted-LAN posture
+- [ ] 3.2 Document the GUI workflow and the trusted-LAN posture (queued-workflow provenance snapshot; Manager endpoint named LAN-only)
 - [ ] 3.3 LitRPG mounts the output dir into their seats; verify shared visibility
 
 ## 4. Later (out of scope)

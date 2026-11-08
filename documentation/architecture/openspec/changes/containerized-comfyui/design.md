@@ -58,6 +58,18 @@ mounts the output dir into their seats; later, join `ai-apps` (name
 `comfyui`) when Cistella networking lands — no rebuild needed. Rollback is
 `podman stop/rm` plus rerun of the previous image tag.
 
+## Operating notes (folded from assets-lane review, non-blocking)
+
+- Workflow provenance: the host-mounted workflows dir is mutable, but the
+  lane treats the workflow manifest as the immutable execution record. The
+  run doc SHALL state that a queued workflow is snapshotted/copied into
+  the manifest (or the dir mounted read-only at queue time), so a later
+  host edit cannot silently diverge provenance.
+- Manager endpoint posture: remote-mode manifest installs go through the
+  ComfyUI-Manager HTTP API — an arbitrary-install surface by design. The
+  trusted-LAN doc SHALL name the Manager endpoint alongside the main API
+  port as LAN-only, later behind the same reverse-proxy/auth as the GUI.
+
 ## Open Questions
 
 None from pc-setup. Resolved with Assets Engineer 2026-11-08: v1
