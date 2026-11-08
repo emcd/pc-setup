@@ -7,7 +7,7 @@ target="opencode"
 
 for arg in "$@"; do
     case "${arg}" in
-        base|opencode|codex|muse|opencode-pandoc) target="${arg}" ;;
+        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg) target="${arg}" ;;
         *)
             echo "error: unknown argument ${arg}" >&2
             exit 1
@@ -137,6 +137,12 @@ case "${target}" in
             && pdftotext handbook-check.pdf - | grep --quiet "→" \
             && test "$(pdftotext handbook-check.pdf - | grep -o "Details subsection" | wc -l)" -ge 2 \
             && pdftotext handbook-check.pdf - | grep --quiet gamma'
+        ;;
+    opencode-litrpg)
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v pandoc)" = "/usr/local/bin/pandoc"'
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'for t in shellcheck shfmt ss nc socat rsync unzip zstd gdb strace ltrace tree; do command -v "$t" >/dev/null || exit 1; done'
         ;;
 esac
 

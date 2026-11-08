@@ -49,6 +49,7 @@ opencode_pins="${repository_root}/images/cistella/opencode/pins.sh"
 codex_pins="${repository_root}/images/cistella/codex/pins.sh"
 muse_pins="${repository_root}/images/cistella/muse/pins.sh"
 pandoc_pins="${repository_root}/images/cistella/opencode-pandoc/pins.sh"
+litrpg_pins="${repository_root}/images/cistella/opencode-litrpg/pins.sh"
 lock_file="${XDG_RUNTIME_DIR:-/tmp}/pc-setup-refresh-images.lock"
 workdir="$(mktemp -d)" || { echo "error: mktemp failed" >&2; exit 2; }
 trap 'rm -rf "${workdir}"' EXIT
@@ -61,7 +62,7 @@ for arg in "$@"; do
         check) mode="check" ;;
         --apply) mode="apply" ;;
         --rollback) mode="rollback" ;;
-        base|opencode|codex|muse|opencode-pandoc)
+        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg)
             if [[ "${mode}" == "rollback" ]]; then
                 rollback_target="${arg}"
             else
@@ -265,11 +266,13 @@ snap_opencode="${snapdir}/opencode-pins.sh"
 snap_codex="${snapdir}/codex-pins.sh"
 snap_muse="${snapdir}/muse-pins.sh"
 snap_pandoc="${snapdir}/opencode-pandoc-pins.sh"
+snap_litrpg="${snapdir}/opencode-litrpg-pins.sh"
 cp "${base_pins}" "${snap_base}" || die2 "cannot snapshot base pins"
 cp "${opencode_pins}" "${snap_opencode}" || die2 "cannot snapshot opencode pins"
 cp "${codex_pins}" "${snap_codex}" || die2 "cannot snapshot codex pins"
 cp "${muse_pins}" "${snap_muse}" || die2 "cannot snapshot muse pins"
 cp "${pandoc_pins}" "${snap_pandoc}" || die2 "cannot snapshot pandoc pins"
+cp "${litrpg_pins}" "${snap_litrpg}" || die2 "cannot snapshot litrpg pins"
 
 # --- discovery (read-only; snapshot + network only, no live mutation) -------
 desired="${workdir}/desired.tsv"
@@ -472,7 +475,7 @@ do_rollback() {
     if [[ -n "${rollback_target}" ]]; then
         names="${rollback_target}"
     else
-        names="base opencode codex muse opencode-pandoc"
+        names="base opencode codex muse opencode-pandoc opencode-litrpg"
     fi
     for name in ${names}; do
         podman image exists "cistella/${name}:previous" \
@@ -499,7 +502,7 @@ if [[ "${mode}" == "rollback" ]]; then
     exit 0
 fi
 
-for name in base opencode codex muse opencode-pandoc; do
+for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
     podman image exists "cistella/${name}:local" \
         || die2 "cistella/${name}:local does not exist; build it first"
 done
@@ -703,6 +706,9 @@ fingerprint_inputs() {
         opencode-pandoc) fingerprint_inputs opencode; printf '%s\n' \
             images/cistella/opencode-pandoc/pins.sh \
             images/cistella/opencode-pandoc/Containerfile ;;
+        opencode-litrpg) fingerprint_inputs opencode-pandoc; printf '%s\n' \
+            images/cistella/opencode-litrpg/pins.sh \
+            images/cistella/opencode-litrpg/Containerfile ;;
     esac
 }
 
@@ -735,7 +741,7 @@ apply_desired_pins() {
 compute_stale() {
     stale_images=""
     local name
-    for name in base opencode codex muse opencode-pandoc; do
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
         if [[ "$(image_label "${name}")" != "$(pins_hash "${name}")" ]]; then
             stale_images+="${name} "
         fi
@@ -796,6 +802,7 @@ restore_all() {
     cp "${snap_codex}" "${codex_pins}"
     cp "${snap_muse}" "${muse_pins}"
     cp "${snap_pandoc}" "${pandoc_pins}"
+    cp "${snap_litrpg}" "${litrpg_pins}"
     local name
     for name in ${preserved:-}; do
         podman tag "cistella/${name}:previous" "cistella/${name}:local" \
@@ -831,7 +838,7 @@ rebuild_one() {
         # parents keeps their refresh labels intact: an unlabeled
         # intermediate retag would read as stale on the next check.
         skip=(--skip-base)
-        [[ "${name}" == "opencode-pandoc" ]] && skip+=(--skip-parents)
+        [[ "${name}" == "opencode-pandoc" || "${name}" == "opencode-litrpg" ]] && skip+=(--skip-parents)
     fi
     "${repository_root}/scripts/build-image" --no-cache "${skip[@]}" \
         --label "pc-setup.refresh-pins=$(pins_hash "${name}")" "${name}"
@@ -853,6 +860,11 @@ done
 for name in ${stale_images}; do
     case "${name}" in
         opencode-pandoc) rebuild_one "${name}" ;;
+    esac
+done
+for name in ${stale_images}; do
+    case "${name}" in
+        opencode-litrpg) rebuild_one "${name}" ;;
     esac
 done
 

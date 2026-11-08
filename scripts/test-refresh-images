@@ -45,6 +45,9 @@ cp "${repo_root}/images/cistella/base/profile.d/seat-path.sh" "${skeleton}/image
 mkdir -p "${skeleton}/images/cistella/opencode-pandoc"
 cp "${repo_root}/images/cistella/opencode-pandoc/pins.sh" "${skeleton}/images/cistella/opencode-pandoc/"
 cp "${repo_root}/images/cistella/opencode-pandoc/Containerfile" "${skeleton}/images/cistella/opencode-pandoc/"
+mkdir -p "${skeleton}/images/cistella/opencode-litrpg"
+cp "${repo_root}/images/cistella/opencode-litrpg/pins.sh" "${skeleton}/images/cistella/opencode-litrpg/"
+cp "${repo_root}/images/cistella/opencode-litrpg/Containerfile" "${skeleton}/images/cistella/opencode-litrpg/"
 cp "${repo_root}/images/cistella/base/Containerfile" "${skeleton}/images/cistella/base/"
 cp "${repo_root}/images/cistella/opencode/Containerfile" "${skeleton}/images/cistella/opencode/"
 cp "${repo_root}/images/cistella/codex/Containerfile" "${skeleton}/images/cistella/codex/"
@@ -390,7 +393,7 @@ seed_images() {
     # $1 fixture root; :local tags present with labels matching the
     # effective closure fingerprint (same input list as refresh-images).
     local root="$1" name h id rel files
-    for name in base opencode codex muse opencode-pandoc; do
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
         id="img-${name}-0"
         echo "cistella/${name}:local=${id}" >> "${root}/state/ids"
     done
@@ -410,9 +413,14 @@ seed_images() {
                 printf '%s\n' \
                     images/cistella/opencode-pandoc/pins.sh \
                     images/cistella/opencode-pandoc/Containerfile ;;
+            opencode-litrpg)
+                fingerprint_files opencode-pandoc
+                printf '%s\n' \
+                    images/cistella/opencode-litrpg/pins.sh \
+                    images/cistella/opencode-litrpg/Containerfile ;;
         esac
     }
-    for name in base opencode codex muse opencode-pandoc; do
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
         files=()
         while IFS= read -r rel; do
             files+=("${root}/${rel}")
@@ -456,7 +464,8 @@ pins_sha() {
         "$1/images/cistella/opencode/pins.sh" \
         "$1/images/cistella/codex/pins.sh" \
         "$1/images/cistella/muse/pins.sh" \
-        "$1/images/cistella/opencode-pandoc/pins.sh" | sha256sum | cut -d' ' -f1
+        "$1/images/cistella/opencode-pandoc/pins.sh" \
+        "$1/images/cistella/opencode-litrpg/pins.sh" | sha256sum | cut -d' ' -f1
 }
 
 current_versions_env() {
@@ -691,13 +700,14 @@ CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 ok_labels=1
-for name in base opencode codex muse opencode-pandoc; do
+for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
     id="$(local_id "${r}" "cistella/${name}:local")"
     want=""
     case "${name}" in
         base) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" | sha256sum | cut -d' ' -f1)" ;;
         opencode|codex|muse) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/${name}/pins.sh" "${r}/images/cistella/${name}/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
         opencode-pandoc) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode/pins.sh" "${r}/images/cistella/opencode/Containerfile" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
+        opencode-litrpg) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode/pins.sh" "${r}/images/cistella/opencode/Containerfile" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" "${r}/images/cistella/opencode-litrpg/pins.sh" "${r}/images/cistella/opencode-litrpg/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
     esac
     got="$(grep -E "^${id}=" "${r}/state/imglabels" | cut -d= -f2-)"
     [[ "${got}" == "${want}" ]] || ok_labels=0
@@ -1485,7 +1495,7 @@ else
     report fail "pandoc-inherited-opencode-rebuild" "exit=${code} pandoc=${got_pandoc}"
 fi
 
-# 41. base-only drift rebuilds everything, lane last.
+# 41. base-only drift rebuilds everything, litrpg lane last.
 r="$(new_case pandoc-inherited-base)"
 seed_images "${r}"
 current_versions_env "${r}"
@@ -1498,12 +1508,12 @@ builds="$(grep -c '^build ' "${r}/state/buildlog")"
 first="$(grep '^build ' "${r}/state/buildlog" | head -1)"
 last="$(grep '^build ' "${r}/state/buildlog" | tail -1)"
 all_present=1
-for n in base opencode codex muse opencode-pandoc; do
+for n in base opencode codex muse opencode-pandoc opencode-litrpg; do
     grep -q "^build cistella/${n}:local" "${r}/state/buildlog" || all_present=0
 done
-if [[ "${code}" == "0" && "${builds}" == "5" && "${all_present}" == "1" \
+if [[ "${code}" == "0" && "${builds}" == "6" && "${all_present}" == "1" \
     && "${first}" == "build cistella/base:local label="* \
-    && "${last}" == "build cistella/opencode-pandoc:local label="* ]]; then
+    && "${last}" == "build cistella/opencode-litrpg:local label="* ]]; then
     report ok "pandoc-inherited-base-rebuilds-all"
 else
     report fail "pandoc-inherited-base-rebuilds-all" "exit=${code} builds=${builds}"
