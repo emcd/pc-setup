@@ -18,4 +18,17 @@ RUN apt-get update \
         libxfixes3 \
         libxkbcommon0 \
         libxrandr2 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists*
+
+# ComfyUI MCP server + CLI for agent-driven generations from LitRPG seats.
+# uv tool shims land in /usr/local/bin (same store as the base tools);
+# COMFY_BIN=/usr/local/bin/comfy is the stable path for MCP configs.
+# (ENV re-declared here: the base UV_* settings live in its builder
+# stage and do not propagate to final images.)
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
+ENV UV_TOOL_DIR=/usr/local/share/uv/tools
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+ARG COMFY_MCP_VERSION
+ARG COMFY_CLI_VERSION
+RUN uv tool install "comfy-mcp==${COMFY_MCP_VERSION}" \
+    && uv tool install "comfy-cli==${COMFY_CLI_VERSION}"

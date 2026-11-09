@@ -6,6 +6,7 @@ LitRPG-only seat image: the opencode harness via the pandoc lane plus the Playwr
 - The image SHALL carry a pins file following the existing track shape (present even when no versioned inputs exist, so the fingerprint covers the layer).
 - Refresh drift detection SHALL cover the new track with no held pins; the effective fingerprint SHALL cover the base+opencode+pandoc closure plus the layer's own recipe, so any ancestor change rebuilds it.
 - `scripts/build-image` and `scripts/validate-image` SHALL accept `opencode-litrpg` (parents-first ordering with `--skip-parents` support; presence assertions for pandoc plus the 13 tool binaries). The fixture suite SHALL cover the new track in the standard lists, skeleton, and fingerprint-want computations.
+- The image SHALL install `comfy-mcp` and `comfy-cli` via uv tool installs pinned in `pins.sh` (`COMFY_MCP_VERSION`, `COMFY_CLI_VERSION`); shims land in `/usr/local/bin` so `COMFY_BIN=/usr/local/bin/comfy` is the stable MCP config path.
 - The `opencode-pandoc--litrpg` Cistella profile SHALL name `cistella/opencode-litrpg:local`. No coder changes (the `opencode--litrpg` coder already wraps that profile).
 
 - **WHEN** `scripts/build-image opencode-litrpg` runs without local parent images to layer on

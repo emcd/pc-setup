@@ -142,6 +142,8 @@ case "${target}" in
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'test "$(command -v pandoc)" = "/usr/local/bin/pandoc"'
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v comfy-mcp)" = "/usr/local/bin/comfy-mcp" && test "$(command -v comfy)" = "/usr/local/bin/comfy"'
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'for t in shellcheck shfmt ss nc socat rsync unzip zstd gdb strace ltrace tree; do command -v "$t" >/dev/null || exit 1; done'
         ;;
 esac

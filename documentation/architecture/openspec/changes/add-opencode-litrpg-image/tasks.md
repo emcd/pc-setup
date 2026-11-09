@@ -9,6 +9,7 @@
 - [x] 2.2 Accept `opencode-litrpg` in `scripts/validate-image` (pandoc plus the 13 tool binaries at expected paths; base-inherited checks)
 - [x] 2.3 Add the sixth track to `scripts/refresh-images` (track lists, fingerprint inputs over the closure, dependency-order builds, closure rollback, lane-style `--skip-parents`)
 - [x] 2.4 Cover the new track in `scripts/test-refresh-images` (skeleton, track lists, fingerprint-want computation) and run the full fixture suite green
+- [x] 2.5 Bake `comfy-mcp` + `comfy-cli` (uv tool installs, pinned) into the litrpg image; assert presence in validate-image
 
 ## 3. Profile and rollout
 
