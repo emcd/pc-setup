@@ -29,7 +29,7 @@ systemctl --user enable --now comfyui.service
 
 | Host | Container | Mode | Notes |
 |---|---|---|---|
-| `~/.local/share/comfyui/models` | `/app/ComfyUI/models` | ro | checkpoints, loras, vae, text encoders |
+| `~/.local/share/comfyui/models` | `/app/ComfyUI/models` | rw | checkpoints, loras, vae, text encoders; manifest-driven downloads land here |
 | `~/.local/share/comfyui/output` | `/app/ComfyUI/output` | rw | **shared with LitRPG seats** |
 | `~/.local/share/comfyui/input` | `/app/ComfyUI/input` | rw | upload sources |
 | `~/.local/share/comfyui/workflows` | `/app/ComfyUI/user/default/workflows` | rw | saved graphs (see provenance) |
