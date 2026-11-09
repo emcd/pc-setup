@@ -4,7 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/podman run --rm --name comfyui --device nvidia.com/gpu=all --security-opt=label=disable --publish 8188:8188 --volume %h/.local/share/comfyui/models:/app/ComfyUI/models:rw --volume %h/.local/share/comfyui/output:/app/ComfyUI/output:rw --volume %h/.local/share/comfyui/input:/app/ComfyUI/input:rw --volume %h/.local/share/comfyui/workflows:/app/ComfyUI/user/default/workflows:rw cistella/comfyui:local
+ExecStart=/usr/bin/podman run --rm --name comfyui --device nvidia.com/gpu=all --security-opt=label=disable --publish 8188:8188 --volume %h/.local/share/comfyui/models:/app/ComfyUI/models:rw --volume %h/.local/share/comfyui/output:/app/ComfyUI/output:rw --volume %h/.local/share/comfyui/input:/app/ComfyUI/input:rw --volume %h/.local/share/comfyui/workflows:/app/ComfyUI/user/default/workflows:rw comfyui:local
 Restart=on-failure
 RestartSec=5
 

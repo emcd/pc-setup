@@ -20,4 +20,4 @@ exec podman run --rm --interactive --tty --name comfyui \
     --volume "${data_home}/output:/app/ComfyUI/output:rw" \
     --volume "${data_home}/input:/app/ComfyUI/input:rw" \
     --volume "${data_home}/workflows:/app/ComfyUI/user/default/workflows:rw" \
-    cistella/comfyui:local
+    comfyui:local
