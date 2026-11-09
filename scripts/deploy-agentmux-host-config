@@ -22,6 +22,7 @@ systemd_files=(
     "${source_systemd_dir}/agentmux.service"
     "${source_systemd_dir}/agentmux-debug.service"
     "${source_systemd_dir}/litrpg-rnd.service"
+    "${source_systemd_dir}/comfyui.service"
     "${source_systemd_dir}/refresh-cistella-images.service"
     "${source_systemd_dir}/refresh-cistella-images.timer"
 )

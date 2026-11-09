@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# Run the pinned ComfyUI server container for local GUI use.
+#
+# First run creates the host data dirs (models, output, input, workflows);
+# the container stays disposable. The GUI is the host browser at
+# http://127.0.0.1:8188 (trusted LAN only -- no auth).
+# For managed lifecycle (restart on failure, journal logs), enable the
+# comfyui.service user unit instead; this script is the manual path.
+
+set -eu -o pipefail
+
+data_home="${XDG_DATA_HOME:-${HOME}/.local/share}/comfyui"
+mkdir --parents "${data_home}/models" "${data_home}/output" "${data_home}/input" "${data_home}/workflows"
+
+exec podman run --rm --interactive --tty --name comfyui \
+    --device nvidia.com/gpu=all --security-opt=label=disable \
+    --publish 8188:8188 \
+    --volume "${data_home}/models:/app/ComfyUI/models:rw" \
+    --volume "${data_home}/output:/app/ComfyUI/output:rw" \
+    --volume "${data_home}/input:/app/ComfyUI/input:rw" \
+    --volume "${data_home}/workflows:/app/ComfyUI/user/default/workflows:rw" \
+    cistella/comfyui:local

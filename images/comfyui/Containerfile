@@ -1,0 +1,35 @@
+ARG CUDA_IMAGE
+FROM ${CUDA_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        git \
+        python3.12 \
+        python3.12-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pinned ComfyUI ref (immutable commit SHA, not a moving tag) plus a
+# pinned torch stack for CUDA 13 / Blackwell. The rest of
+# requirements.txt floats (same tradeoff as trixie apt sets elsewhere).
+ARG COMFYUI_SHA
+ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG TORCHAO_VERSION
+ENV PIP_NO_CACHE_DIR=1
+RUN git init /app/ComfyUI \
+    && git -C /app/ComfyUI remote add origin https://github.com/Comfy-Org/ComfyUI.git \
+    && git -C /app/ComfyUI fetch --depth 1 origin "${COMFYUI_SHA}" \
+    && git -C /app/ComfyUI checkout FETCH_HEAD \
+    && python3.12 -m venv /opt/comfyui \
+    && /opt/comfyui/bin/pip install --upgrade pip \
+    && /opt/comfyui/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu130 \
+        "torch==${TORCH_VERSION}" \
+        "torchao==${TORCHAO_VERSION}" \
+        "torchvision==${TORCHVISION_VERSION}" \
+    && /opt/comfyui/bin/pip install -r /app/ComfyUI/requirements.txt
+
+ENV PATH=/opt/comfyui/bin:${PATH}
+WORKDIR /app/ComfyUI
+EXPOSE 8188
+CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188"]
