@@ -16,6 +16,7 @@
 - [x] 3.1 `scripts/run-comfyui` (foreground) + `comfyui.service` user unit (managed; disabled by default); both use `--device nvidia.com/gpu=all` + label disable
 - [x] 3.2 `images/comfyui/README.md`: GUI workflow, trusted-LAN posture, provenance snapshot rule, Manager endpoint LAN-only
 - [ ] 3.3 LitRPG mounts the output dir into their seats; verify shared visibility
+- [ ] 3.4 Klein-4B load via manifest flow, on first real generation (gate carried explicitly open per assets@litrpg agreement 2026-11-08; server+torch+GPU already verified on GB10; Apache 2.0 weights, no license gate, multi-GB pull happens with first manifest)
 
 ## 4. Later (out of scope)
 
