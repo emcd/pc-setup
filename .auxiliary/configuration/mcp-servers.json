@@ -22,6 +22,13 @@
         "--notebook", "pc-setup",
         "--no-commit-signing"
       ]
+    },
+    "comfyui": {
+      "command": "/home/me/.local/bin/comfy-mcp",
+      "env": {
+        "COMFY_BIN": "/home/me/.local/bin/comfy",
+        "COMFYUI_URL": "http://127.0.0.1:8188"
+      }
     }
   }
 }

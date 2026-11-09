@@ -79,6 +79,17 @@
         "--no-commit-signing"
       ],
       "enabled": true
+    },
+    "comfyui": {
+      "type": "local",
+      "command": [
+        "/home/me/.local/bin/comfy-mcp"
+      ],
+      "environment": {
+        "COMFY_BIN": "/home/me/.local/bin/comfy",
+        "COMFYUI_URL": "http://127.0.0.1:8188"
+      },
+      "enabled": true
     }
   },
 
