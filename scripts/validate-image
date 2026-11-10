@@ -61,7 +61,6 @@ podman run --rm --userns=keep-id --env HOME=/ --env TERM=xterm-ghostty "${image_
         test "$(command -v pre-commit)" = "/usr/local/bin/pre-commit"
         test "$(command -v python)" = "/usr/bin/python"
         test "$(command -v python3)" = "/usr/bin/python3"
-        test "$(command -v reloaderoo)" = "/usr/local/bin/reloaderoo"
         test "$(command -v rg)" = "/usr/bin/rg"
         test "$(command -v rsync)" = "/usr/bin/rsync"
         test "$(command -v shellcheck)" = "/usr/bin/shellcheck"
@@ -89,7 +88,6 @@ podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
     sh -c 'fc-list | grep --quiet "DejaVu Sans" && fc-list | grep --quiet "DejaVu Sans Mono"'
 podman run --rm --userns=keep-id "${image_tag}" tmux -V | grep --quiet "${TMUX_VERSION}"
 podman run --rm --userns=keep-id "${image_tag}" gh --version | grep --quiet "${GH_VERSION}"
-podman run --rm --userns=keep-id "${image_tag}" reloaderoo --version | grep --quiet "${RELOADEROO_VERSION}"
 
 case "${target}" in
     base)
