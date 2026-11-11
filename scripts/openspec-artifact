@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Print an openspec artifact's instruction and template as plain text,
+# so callers don't need ad-hoc `python3 -c` JSON plumbing.
+# Usage: openspec-artifact <artifact-id> [--change <name>]
+set -eu -o pipefail
+
+openspec instructions "$@" --json | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(d.get("instruction", "").rstrip())
+print("---TEMPLATE---")
+print(d.get("template", "").rstrip())
+'
