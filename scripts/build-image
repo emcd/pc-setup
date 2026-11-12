@@ -45,9 +45,11 @@ build_one() {
     build_args+=("$@")
     # No self-stamp: the refresh fingerprint covers pins plus the
     # Containerfile closure, so no pins-only label could ever match it.
-    # Standalone builds leave images unlabeled (like every harness
-    # target) and the next refresh converges them; an explicit --label
-    # passed by a caller is the only stamped form.
+    # Standalone builds carry no fresh stamp of their own: the final
+    # image inherits the base tag's labels (buildah propagates base
+    # config, including labels), so a manual build reads as stale until
+    # the next refresh converges it with its own label. An explicit
+    # --label passed by a caller is the only stamped form.
     while IFS= read -r line || [[ -n "${line}" ]]; do
         line="${line%%#*}"
         line="${line#"${line%%[![:space:]]*}"}"
@@ -57,6 +59,7 @@ build_one() {
 
     podman build \
         "${build_args[@]}" \
+        --build-context "mixins=${repository_root}/images/cistella/_mixins" \
         --file "${repository_root}/images/cistella/${name}/Containerfile" \
         --tag "cistella/${name}:local" \
         "${repository_root}/images/cistella/${name}"
@@ -67,33 +70,11 @@ if [[ "${target}" == "base" ]]; then
     exit 0
 fi
 
-# The implicit base rebuild keeps standalone harness builds fresh. Callers
-# that manage base themselves (refresh-images builds it explicitly first
-# when stale) pass --skip-base so base:local is never rebuilt or retagged
-# as a side effect; the harness then builds FROM the selected base tag.
-if [[ "${skip_base}" == "0" ]]; then
+# Flat finals build FROM the local base tag only: rebuild base from
+# cache first, unless the caller manages it. --skip-parents implies
+# skipping the base rebuild too (base is the only parent left);
+# refresh-images passes both flags once it has converged base itself.
+if [[ "${skip_base}" == "0" && "${skip_parents}" == "0" ]]; then
     build_one base
 fi
-# shellcheck disable=SC1091
-. "${repository_root}/images/cistella/base/pins.sh"
-if [[ "${target}" == "opencode-pandoc" && "${skip_parents}" == "0" ]]; then
-    # Lane layer sits on the opencode image: build the parent chain
-    # first (parents from cache; --no-cache applies to the named image
-    # only, matching the harness semantic). Callers that already
-    # converged the parents (refresh-images builds them in dependency
-    # order) pass --skip-parents so the intermediate build cannot
-    # retag opencode:local without its refresh label.
-    build_one opencode --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
-fi
-if [[ "${target}" == "opencode-litrpg" && "${skip_parents}" == "0" ]]; then
-    # LitRPG layer sits on the pandoc lane: build the parent chain
-    # first (parents from cache; --no-cache applies to the named image
-    # only, matching the harness semantic). Callers that already
-    # converged the parents (refresh-images builds them in dependency
-    # order) pass --skip-parents so the intermediate builds cannot
-    # retag opencode:local or opencode-pandoc:local without their
-    # refresh labels.
-    build_one opencode --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
-    build_one opencode-pandoc --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
-fi
-build_one "${target}" "${no_cache[@]}" "${extra_labels[@]}" --build-arg "DEBIAN_IMAGE=${DEBIAN_IMAGE}"
+build_one "${target}" "${no_cache[@]}" "${extra_labels[@]}"

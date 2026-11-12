@@ -51,12 +51,15 @@ follows the 3.1 series by explicit both-teams decision.
   even when images are stale — that is what `--apply` is for.
 - `refresh-images --apply` — snapshot pins, bump them, preserve `:previous`
   tags, rebuild stale images `--no-cache` in dependency order (base,
-  then harnesses, then the lane image), validate
+  then independent finals; no lane builds FROM another lane), validate
   each. Staleness comes from a `pc-setup.refresh-pins` label stamped at
   build time covering each image's pins *and* Containerfile plus every
-  ancestor's, so recipe-only changes mark descendants stale and retry
-  after a failure (or apply after a rollback)
-  converges instead of exiting clean. Any build/validate failure restores
+  consumed fragment source file, so recipe-only changes mark consumers
+  and their image descendants stale (never unrelated siblings) and
+  retry after a failure (or apply after a rollback)
+  converges instead of exiting clean. Shared pins are duplicated into
+  every consuming final's `pins.sh`; discovery rewrites all owners
+  atomically before any build. Any build/validate failure restores
   exact pin bytes plus tags (the affected closure) and exits `2`. Concurrent runs are serialized
   with a lock file; a second mutator is refused, never queued.
 - `refresh-images --rollback [target]` — re-tag `:previous` over `:local`

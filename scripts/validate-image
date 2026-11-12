@@ -114,8 +114,8 @@ case "${target}" in
             sh -c "muse --version 2>&1 | grep --quiet '${MUSE_VERSION}'"
         ;;
     opencode-pandoc)
-        # shellcheck disable=SC1090,SC1091
-        . "${repository_root}/images/cistella/opencode/pins.sh"
+        # Lane pins carry the lane's own duplicated OPENCODE_* plus PANDOC_*
+        # (D3); base pins were sourced at the top for every target.
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'test "$(command -v opencode)" = "/usr/local/bin/opencode"'
         podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
@@ -138,8 +138,39 @@ case "${target}" in
             && pdftotext handbook-check.pdf - | grep --quiet gamma'
         ;;
     opencode-litrpg)
+        # Union composition proves every claimed capability: harness,
+        # documents render, browser-runtime libraries, comfy tools.
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v opencode)" = "/usr/local/bin/opencode"'
+        podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
+            sh -c "opencode --version | grep --quiet '${OPENCODE_VERSION}'"
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'test "$(command -v pandoc)" = "/usr/local/bin/pandoc"'
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c "pandoc --version | head -1 | grep --quiet 'pandoc ${PANDOC_VERSION}'"
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c 'xelatex --version >/dev/null && pdftotext -v 2>&1 | grep --quiet "poppler"'
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" sh -c '
+            cd /tmp \
+            && printf "# Handbook check\n\n## Details subsection\n\nA table, an em-dash — and an arrow →.\n\n| alpha | beta |\n|---|---|\n| gamma | delta |\n" > handbook-check.md \
+            && pandoc handbook-check.md -o handbook-check.pdf --toc --toc-depth=2 --pdf-engine=xelatex \
+            && test -s handbook-check.pdf \
+            && test -z "$(pdffonts handbook-check.pdf | tail -n +3 | grep -v "yes *yes *yes" || true)" \
+            && pdftotext handbook-check.pdf - | grep --quiet "—" \
+            && pdftotext handbook-check.pdf - | grep --quiet "→" \
+            && test "$(pdftotext handbook-check.pdf - | grep -o "Details subsection" | wc -l)" -ge 2 \
+            && pdftotext handbook-check.pdf - | grep --quiet gamma'
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'for p in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcups2t64 libdbus-1-3 libgbm1 libpango-1.0-0 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2; do dpkg -l "$p" 2>/dev/null | tail -1 | grep --quiet "^ii" || exit 1; done'
+        # Bounded browser-runtime capability proof: every claimed library
+        # must actually load (plus a negative control proving the check
+        # is not vacuous). This is load proof, not a browser launch: no
+        # browser binary ships in the image, so no launch is attempted
+        # and no sandbox, device, network, or display exemption exists.
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            python3 -c "import ctypes; [ctypes.CDLL(l) for l in ['libasound.so.2','libatk-bridge-2.0.so.0','libatk-1.0.so.0','libatspi.so.0','libcups.so.2','libdbus-1.so.3','libgbm.so.1','libpango-1.0.so.0','libXcomposite.so.1','libXdamage.so.1','libXfixes.so.3','libxkbcommon.so.0','libXrandr.so.2']]; print('browser-runtime-load-ok')"
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c 'python3 -c "import ctypes; ctypes.CDLL(\"libnope-not-real.so.0\")" 2>/dev/null && exit 1 || exit 0'
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'test "$(command -v comfy-mcp)" = "/usr/local/bin/comfy-mcp" && test "$(command -v comfy)" = "/usr/local/bin/comfy"'
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \

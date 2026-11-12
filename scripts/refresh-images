@@ -7,7 +7,7 @@
 # Debian/Rust base digests, PyPI distributions, crates.io crates), then on
 # --apply: snapshot pins, bump
 # them, preserve :previous tags, rebuild stale images with --no-cache in
-# base -> harness order, validate, and leave rollout to the operator.
+# base -> independent finals order, validate, and leave rollout to the operator.
 #
 # HOLD_VARS pins are notify-only: reported every run, never bumped, never
 # rebuilt. Crates track stable only; emcd-agents tracks the highest
@@ -289,30 +289,71 @@ note_drift() {
 }
 
 discover_opencode() {
-    local current version url sha pkg
+    local current version url sha pkg owner arm_sha amd_sha
+    local c64 c86 o_v o64 o86 ofile sfile repaired=""
     pin_value "${snap_opencode}" OPENCODE_VERSION current \
         || die2 "cannot read OPENCODE_VERSION"
+    pin_value "${snap_opencode}" OPENCODE_SHA256_ARM64 c64 \
+        || die2 "cannot read OPENCODE_SHA256_ARM64"
+    pin_value "${snap_opencode}" OPENCODE_SHA256_AMD64 c86 \
+        || die2 "cannot read OPENCODE_SHA256_AMD64"
     latest_opencode_version version || die2 "opencode npm channel lookup failed"
-    [[ "${version}" == "${current}" ]] && return 0
-    for plat in arm64 amd64; do
-        if [[ "${plat}" == "arm64" ]]; then
-            pkg="cli-linux-arm64"
-        else
-            pkg="cli-linux-x64"
-        fi
-        opencode_platform_tarball url "${version}" "${pkg}" \
-            || die2 "opencode platform package lookup failed for ${pkg} ${version}"
-        xcurl --max-time 300 --location --output "${workdir}/opencode-${plat}.tgz" "${url}"
-        sha="$(sha256sum "${workdir}/opencode-${plat}.tgz" | cut -d' ' -f1)"
-        [[ "${sha}" =~ ^[0-9a-f]{64}$ ]] || die2 "bad sha for opencode ${plat} tarball"
-        if [[ "${plat}" == "arm64" ]]; then
-            want_pin "${opencode_pins}" OPENCODE_SHA256_ARM64 "${sha}"
-        else
-            want_pin "${opencode_pins}" OPENCODE_SHA256_AMD64 "${sha}"
+    if [[ "${version}" != "${current}" ]]; then
+        for plat in arm64 amd64; do
+            if [[ "${plat}" == "arm64" ]]; then
+                pkg="cli-linux-arm64"
+            else
+                pkg="cli-linux-x64"
+            fi
+            opencode_platform_tarball url "${version}" "${pkg}" \
+                || die2 "opencode platform package lookup failed for ${pkg} ${version}"
+            xcurl --max-time 300 --location --output "${workdir}/opencode-${plat}.tgz" "${url}"
+            sha="$(sha256sum "${workdir}/opencode-${plat}.tgz" | cut -d' ' -f1)"
+            [[ "${sha}" =~ ^[0-9a-f]{64}$ ]] || die2 "bad sha for opencode ${plat} tarball"
+            if [[ "${plat}" == "arm64" ]]; then
+                arm_sha="${sha}"
+            else
+                amd_sha="${sha}"
+            fi
+        done
+        # Flat fan-out (D3): the harness pin is duplicated into every
+        # OpenCode-consuming final. All owners are written through the
+        # single desired list — applied atomically before any build, and
+        # restored as a unit on failure — so no final is left on the old
+        # binary while its label converges.
+        for owner in "${opencode_pins}" "${pandoc_pins}" "${litrpg_pins}"; do
+            want_pin "${owner}" OPENCODE_SHA256_ARM64 "${arm_sha}"
+            want_pin "${owner}" OPENCODE_SHA256_AMD64 "${amd_sha}"
+            want_pin "${owner}" OPENCODE_VERSION "${version}"
+        done
+        note_drift "opencode OPENCODE_VERSION ${current} -> ${version} (fanned out to opencode, opencode-pandoc, opencode-litrpg)"
+        return 0
+    fi
+    # No channel movement: every duplicated owner must still agree with
+    # the canonical tuple. A hand-edited duplicate is repaired
+    # transactionally (never accepted as converged): the canonical owner
+    # matches upstream by the check above, so propagating it is safe.
+    for owner in pandoc litrpg; do
+        case "${owner}" in
+            pandoc) ofile="${pandoc_pins}"; sfile="${snap_pandoc}" ;;
+            litrpg) ofile="${litrpg_pins}"; sfile="${snap_litrpg}" ;;
+        esac
+        pin_value "${sfile}" OPENCODE_VERSION o_v \
+            || die2 "cannot read OPENCODE_VERSION from ${sfile}"
+        pin_value "${sfile}" OPENCODE_SHA256_ARM64 o64 \
+            || die2 "cannot read OPENCODE_SHA256_ARM64 from ${sfile}"
+        pin_value "${sfile}" OPENCODE_SHA256_AMD64 o86 \
+            || die2 "cannot read OPENCODE_SHA256_AMD64 from ${sfile}"
+        if [[ "${o_v}" != "${current}" || "${o64}" != "${c64}" || "${o86}" != "${c86}" ]]; then
+            want_pin "${ofile}" OPENCODE_SHA256_ARM64 "${c64}"
+            want_pin "${ofile}" OPENCODE_SHA256_AMD64 "${c86}"
+            want_pin "${ofile}" OPENCODE_VERSION "${current}"
+            repaired+="${owner} "
         fi
     done
-    want_pin "${opencode_pins}" OPENCODE_VERSION "${version}"
-    note_drift "opencode OPENCODE_VERSION ${current} -> ${version}"
+    [[ -n "${repaired}" ]] \
+        && note_drift "opencode repaired divergent duplicate pins in:${repaired}(canonical ${current})"
+    return 0
 }
 
 discover_codex() {
@@ -448,9 +489,34 @@ discover_pandoc() {
     # or above the 3.1 series, and never touch the pins or fetch
     # tarballs. Unholding requires adding the tarball-fetch path first;
     # refuse loudly rather than drifting silently.
-    local current tag
+    local current tag l_v l64 l86 c64 c86
     pin_value "${snap_pandoc}" PANDOC_VERSION current \
         || die2 "cannot read PANDOC_VERSION"
+    pin_value "${snap_pandoc}" PANDOC_SHA256_ARM64 c64 \
+        || die2 "cannot read PANDOC_SHA256_ARM64"
+    pin_value "${snap_pandoc}" PANDOC_SHA256_AMD64 c86 \
+        || die2 "cannot read PANDOC_SHA256_AMD64"
+    # D3 agreement on the held track: the litrpg duplicate must match
+    # the canonical tuple. A held pin is human-gated, so a mismatch is
+    # never auto-repaired toward either side: unlike the opencode owner
+    # (verified against upstream when the channel is still), the pandoc
+    # canonical file is not machine-verified here — any newer upstream
+    # tag only fires the notify-only hold notice — so auto-repair could
+    # cement a bad hand-edit of the canonical file itself. Check reports
+    # drift; apply refuses operational-error with pins untouched.
+    pin_value "${snap_litrpg}" PANDOC_VERSION l_v \
+        || die2 "cannot read PANDOC_VERSION from litrpg pins"
+    pin_value "${snap_litrpg}" PANDOC_SHA256_ARM64 l64 \
+        || die2 "cannot read PANDOC_SHA256_ARM64 from litrpg pins"
+    pin_value "${snap_litrpg}" PANDOC_SHA256_AMD64 l86 \
+        || die2 "cannot read PANDOC_SHA256_AMD64 from litrpg pins"
+    if [[ "${l_v}" != "${current}" || "${l64}" != "${c64}" || "${l86}" != "${c86}" ]]; then
+        if [[ "${mode}" == "apply" ]]; then
+            die2 "divergent held PANDOC tuple in opencode-litrpg (canonical ${current}); restore by hand, never auto-repaired"
+        fi
+        note_drift "pandoc divergent held duplicate pins in opencode-litrpg (canonical ${current}; held track never auto-repairs)"
+        return 0
+    fi
     latest_pandoc_tag tag || die2 "pandoc release lookup failed"
     [[ "${tag}" == "${current}" ]] && return 0
     is_held PANDOC_VERSION || die2 "PANDOC_VERSION unheld with no fetch path; add tarball discovery first"
@@ -689,6 +755,8 @@ discover_crate linecheck LINECHECK_VERSION
 
 fingerprint_inputs() {
     # $1 image name; prints repo-relative input paths, ancestors first.
+    # Flat finals list base plus their own pins/recipe plus every
+    # consumed fragment source file (install scripts and package lists).
     case "$1" in
         base) printf '%s\n' \
             images/cistella/base/pins.sh \
@@ -696,31 +764,57 @@ fingerprint_inputs() {
             images/cistella/base/profile.d/seat-path.sh ;;
         opencode) fingerprint_inputs base; printf '%s\n' \
             images/cistella/opencode/pins.sh \
-            images/cistella/opencode/Containerfile ;;
+            images/cistella/opencode/Containerfile \
+            images/cistella/_mixins/harness-opencode/install.sh ;;
         codex) fingerprint_inputs base; printf '%s\n' \
             images/cistella/codex/pins.sh \
-            images/cistella/codex/Containerfile ;;
+            images/cistella/codex/Containerfile \
+            images/cistella/_mixins/harness-codex/install.sh ;;
         muse) fingerprint_inputs base; printf '%s\n' \
             images/cistella/muse/pins.sh \
-            images/cistella/muse/Containerfile ;;
-        opencode-pandoc) fingerprint_inputs opencode; printf '%s\n' \
+            images/cistella/muse/Containerfile \
+            images/cistella/_mixins/harness-muse/install.sh ;;
+        opencode-pandoc) fingerprint_inputs base; printf '%s\n' \
             images/cistella/opencode-pandoc/pins.sh \
-            images/cistella/opencode-pandoc/Containerfile ;;
-        opencode-litrpg) fingerprint_inputs opencode-pandoc; printf '%s\n' \
+            images/cistella/opencode-pandoc/Containerfile \
+            images/cistella/_mixins/harness-opencode/install.sh \
+            images/cistella/_mixins/documents/install.sh \
+            images/cistella/_mixins/documents/packages.txt ;;
+        opencode-litrpg) fingerprint_inputs base; printf '%s\n' \
             images/cistella/opencode-litrpg/pins.sh \
-            images/cistella/opencode-litrpg/Containerfile ;;
+            images/cistella/opencode-litrpg/Containerfile \
+            images/cistella/_mixins/harness-opencode/install.sh \
+            images/cistella/_mixins/documents/install.sh \
+            images/cistella/_mixins/documents/packages.txt \
+            images/cistella/_mixins/browser-runtime/install.sh \
+            images/cistella/_mixins/browser-runtime/packages.txt \
+            images/cistella/_mixins/comfy-tools/install.sh ;;
     esac
 }
 
 pins_hash() {
     # Effective fingerprint: own pins + own recipe inputs plus every
     # ancestor's. A recipe-only change marks the image and all
-    # descendants stale.
+    # descendants stale. Every input must be a readable REGULAR file
+    # (-f excludes directories, FIFOs, sockets: no hangs, no
+    # directory reads); any other read or hash failure is an explicit
+    # operational error (exit 2), never a manufactured fingerprint.
+    # die2 is explicit so the status survives conditional
+    # substitutions and trap-less check mode alike.
     local f files=()
     while IFS= read -r f; do
         files+=("${repository_root}/${f}")
     done < <(fingerprint_inputs "$1")
-    cat "${files[@]}" | sha256sum | cut -d' ' -f1
+    local p fp
+    for p in "${files[@]}"; do
+        if [[ ! -f "${p}" || ! -r "${p}" ]]; then
+            die2 "missing or unreadable fingerprint input: ${p}"
+        fi
+    done
+    if ! fp="$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)"; then
+        die2 "cannot hash fingerprint inputs for $1"
+    fi
+    printf '%s\n' "${fp}"
 }
 
 image_label() {
@@ -748,6 +842,19 @@ compute_stale() {
     done
 }
 
+# Status-checked closure preflight for BOTH modes: every fingerprint
+# input must exist and be readable before any classification, pin write,
+# or tag move. pins_hash dies operational-error (exit 2) on the first
+# bad input; calling it here (outside any conditional substitution)
+# propagates that status instead of masking it as stale/clean.
+preflight_inputs() {
+    local name
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
+        pins_hash "${name}" >/dev/null
+    done
+}
+
+preflight_inputs
 compute_stale
 
 # Unconditional check-mode boundary: check never proceeds past this point,
@@ -811,6 +918,7 @@ restore_all() {
 }
 trap 'restore_all; rm -rf "${workdir}"; exit 2' EXIT
 
+# Shared preflight_inputs already ran before classification (both modes).
 apply_desired_pins
 compute_stale
 
@@ -832,21 +940,19 @@ done
 rebuild_one() {
     local name="$1" skip=()
     if [[ "${name}" != "base" ]]; then
-        # Harness builds reuse base without rebuilding or retagging it;
-        # the lane build additionally reuses opencode, which refresh
-        # already converged in dependency order above. Skipping the
-        # parents keeps their refresh labels intact: an unlabeled
-        # intermediate retag would read as stale on the next check.
-        skip=(--skip-base)
-        [[ "${name}" == "opencode-pandoc" || "${name}" == "opencode-litrpg" ]] && skip+=(--skip-parents)
+        # Flat finals build FROM the converged base tag without
+        # rebuilding or retagging it. Skipping keeps the base refresh
+        # label intact: an unlabeled retag would read as stale on the
+        # next check.
+        skip=(--skip-base --skip-parents)
     fi
     "${repository_root}/scripts/build-image" --no-cache "${skip[@]}" \
         --label "pc-setup.refresh-pins=$(pins_hash "${name}")" "${name}"
     "${repository_root}/scripts/validate-image" "${name}"
 }
 
-# Base first so harnesses copy the fresh base tag. The lane image layers
-# on opencode, so it builds last: inherited rebuilds land before it.
+# Base first so finals copy the fresh base tag. Finals are independent
+# of each other and build in listed order.
 for name in ${stale_images}; do
     case "${name}" in
         base) rebuild_one base ;;
@@ -854,17 +960,7 @@ for name in ${stale_images}; do
 done
 for name in ${stale_images}; do
     case "${name}" in
-        opencode|codex|muse) rebuild_one "${name}" ;;
-    esac
-done
-for name in ${stale_images}; do
-    case "${name}" in
-        opencode-pandoc) rebuild_one "${name}" ;;
-    esac
-done
-for name in ${stale_images}; do
-    case "${name}" in
-        opencode-litrpg) rebuild_one "${name}" ;;
+        opencode|codex|muse|opencode-pandoc|opencode-litrpg) rebuild_one "${name}" ;;
     esac
 done
 

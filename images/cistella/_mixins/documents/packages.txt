@@ -1,0 +1,8 @@
+fontconfig
+fonts-dejavu-core
+lmodern
+poppler-utils
+texlive-fonts-recommended
+texlive-latex-extra
+texlive-latex-recommended
+texlive-xetex

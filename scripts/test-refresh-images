@@ -48,6 +48,8 @@ cp "${repo_root}/images/cistella/opencode-pandoc/Containerfile" "${skeleton}/ima
 mkdir -p "${skeleton}/images/cistella/opencode-litrpg"
 cp "${repo_root}/images/cistella/opencode-litrpg/pins.sh" "${skeleton}/images/cistella/opencode-litrpg/"
 cp "${repo_root}/images/cistella/opencode-litrpg/Containerfile" "${skeleton}/images/cistella/opencode-litrpg/"
+mkdir -p "${skeleton}/images/cistella/_mixins"
+cp -r "${repo_root}/images/cistella/_mixins/." "${skeleton}/images/cistella/_mixins/"
 cp "${repo_root}/images/cistella/base/Containerfile" "${skeleton}/images/cistella/base/"
 cp "${repo_root}/images/cistella/opencode/Containerfile" "${skeleton}/images/cistella/opencode/"
 cp "${repo_root}/images/cistella/codex/Containerfile" "${skeleton}/images/cistella/codex/"
@@ -327,9 +329,9 @@ case "${cmd}" in
             [[ "${a}" == pc-setup.refresh-pins=* ]] && label="${a#pc-setup.refresh-pins=}"
             prev="${a}"
         done
-        # A required tag models a FROM dependency: a standalone lane
+        # A required tag models a FROM dependency: a standalone final
         # build with --skip-base --skip-parents fails here exactly as
-        # podman fails pulling a missing parent, instead of tagging
+        # podman fails pulling a missing base, instead of tagging
         # over it.
         if [[ -n "${STUB_REQUIRE_TAG:-}" ]]; then
             [[ -n "$(tag_id "${STUB_REQUIRE_TAG}")" ]] \
@@ -407,17 +409,27 @@ seed_images() {
                 fingerprint_files base
                 printf '%s\n' \
                     "images/cistella/$1/pins.sh" \
-                    "images/cistella/$1/Containerfile" ;;
+                    "images/cistella/$1/Containerfile" \
+                    "images/cistella/_mixins/harness-$1/install.sh" ;;
             opencode-pandoc)
-                fingerprint_files opencode
+                fingerprint_files base
                 printf '%s\n' \
                     images/cistella/opencode-pandoc/pins.sh \
-                    images/cistella/opencode-pandoc/Containerfile ;;
+                    images/cistella/opencode-pandoc/Containerfile \
+                    images/cistella/_mixins/harness-opencode/install.sh \
+                    images/cistella/_mixins/documents/install.sh \
+                    images/cistella/_mixins/documents/packages.txt ;;
             opencode-litrpg)
-                fingerprint_files opencode-pandoc
+                fingerprint_files base
                 printf '%s\n' \
                     images/cistella/opencode-litrpg/pins.sh \
-                    images/cistella/opencode-litrpg/Containerfile ;;
+                    images/cistella/opencode-litrpg/Containerfile \
+                    images/cistella/_mixins/harness-opencode/install.sh \
+                    images/cistella/_mixins/documents/install.sh \
+                    images/cistella/_mixins/documents/packages.txt \
+                    images/cistella/_mixins/browser-runtime/install.sh \
+                    images/cistella/_mixins/browser-runtime/packages.txt \
+                    images/cistella/_mixins/comfy-tools/install.sh ;;
         esac
     }
     for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
@@ -705,9 +717,9 @@ for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
     want=""
     case "${name}" in
         base) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" | sha256sum | cut -d' ' -f1)" ;;
-        opencode|codex|muse) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/${name}/pins.sh" "${r}/images/cistella/${name}/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
-        opencode-pandoc) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode/pins.sh" "${r}/images/cistella/opencode/Containerfile" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
-        opencode-litrpg) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode/pins.sh" "${r}/images/cistella/opencode/Containerfile" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" "${r}/images/cistella/opencode-litrpg/pins.sh" "${r}/images/cistella/opencode-litrpg/Containerfile" | sha256sum | cut -d' ' -f1)" ;;
+        opencode|codex|muse) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/${name}/pins.sh" "${r}/images/cistella/${name}/Containerfile" "${r}/images/cistella/_mixins/harness-${name}/install.sh" | sha256sum | cut -d' ' -f1)" ;;
+        opencode-pandoc) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" "${r}/images/cistella/_mixins/harness-opencode/install.sh" "${r}/images/cistella/_mixins/documents/install.sh" "${r}/images/cistella/_mixins/documents/packages.txt" | sha256sum | cut -d' ' -f1)" ;;
+        opencode-litrpg) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode-litrpg/pins.sh" "${r}/images/cistella/opencode-litrpg/Containerfile" "${r}/images/cistella/_mixins/harness-opencode/install.sh" "${r}/images/cistella/_mixins/documents/install.sh" "${r}/images/cistella/_mixins/documents/packages.txt" "${r}/images/cistella/_mixins/browser-runtime/install.sh" "${r}/images/cistella/_mixins/browser-runtime/packages.txt" "${r}/images/cistella/_mixins/comfy-tools/install.sh" | sha256sum | cut -d' ' -f1)" ;;
     esac
     got="$(grep -E "^${id}=" "${r}/state/imglabels" | cut -d= -f2-)"
     [[ "${got}" == "${want}" ]] || ok_labels=0
@@ -1519,62 +1531,62 @@ else
     report fail "pandoc-inherited-base-rebuilds-all" "exit=${code} builds=${builds}"
 fi
 
-# 42. lane parent build failure: opencode fails, lane never builds.
-#     (Parent-build failure with parents present, distinct from an
-#     absent parent -- see test 44.)
-r="$(new_case lane-parent-fail)"
+# 42. base build failure: base fails, final never builds.
+#     (Base-build failure with base present, distinct from an
+#     absent base -- see test 44.)
+r="$(new_case final-base-fail)"
 seed_images "${r}"
 current_versions_env "${r}"
-echo 2 > "${r}/state/fail_build_n"
+echo 1 > "${r}/state/fail_build_n"
 code="0"
 PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" PODMAN_STATE="${r}/state" \
     XDG_RUNTIME_DIR="${r}" ./scripts/build-image opencode-pandoc \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 if [[ "${code}" != "0" ]] \
-    && grep -q '^build cistella/opencode:local' "${r}/state/buildlog" \
+    && grep -q '^build cistella/base:local' "${r}/state/buildlog" \
     && ! grep -q '^build cistella/opencode-pandoc' "${r}/state/buildlog"; then
-    report ok "lane-parent-fail-no-child"
+    report ok "final-base-fail-no-child"
 else
-    report fail "lane-parent-fail-no-child" "exit=${code}"
+    report fail "final-base-fail-no-child" "exit=${code}"
 fi
 
-# 44. absent parent fails the lane build: with --skip-base
-#     --skip-parents (the refresh path) and no local opencode image,
-#     the lane build fails instead of tagging over the missing parent.
-r="$(new_case lane-missing-parent)"
+# 44. absent base fails the flat final build: with --skip-base
+#     --skip-parents (the refresh path) and no local base image,
+#     the final build fails instead of tagging over the missing base.
+r="$(new_case final-missing-base)"
 seed_images "${r}"
 current_versions_env "${r}"
-grep -vE '^cistella/opencode:local=' "${r}/state/ids" > "${r}/state/ids.tmp" || true
+grep -vE '^cistella/base:local=' "${r}/state/ids" > "${r}/state/ids.tmp" || true
 mv "${r}/state/ids.tmp" "${r}/state/ids"
 code="0"
-STUB_REQUIRE_TAG="cistella/opencode:local" \
+STUB_REQUIRE_TAG="cistella/base:local" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" PODMAN_STATE="${r}/state" \
     XDG_RUNTIME_DIR="${r}" ./scripts/build-image --skip-base --skip-parents opencode-pandoc \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 if [[ "${code}" != "0" ]] \
     && ! grep -q '^build cistella/opencode-pandoc' "${r}/state/buildlog" \
     && grep -q "missing parent" "${r}/stderr"; then
-    report ok "lane-missing-parent-fails"
+    report ok "final-missing-base-fails"
 else
-    report fail "lane-missing-parent-fails" "exit=${code}"
+    report fail "final-missing-base-fails" "exit=${code}"
 fi
 
-# 44b. paired control: parent present, same flags and the same
-#     guard enabled, lane builds fine. Varies only parent presence
+# 44b. paired control: base present, same flags and the same
+#     guard enabled, final builds fine. Varies only base presence
 #     from test 44.
-r="$(new_case lane-parent-present-builds)"
+r="$(new_case final-base-present-builds)"
 seed_images "${r}"
 current_versions_env "${r}"
 code="0"
-STUB_REQUIRE_TAG="cistella/opencode:local" \
+STUB_REQUIRE_TAG="cistella/base:local" \
     PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" PODMAN_STATE="${r}/state" \
     XDG_RUNTIME_DIR="${r}" ./scripts/build-image --skip-base --skip-parents opencode-pandoc \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 if [[ "${code}" == "0" ]] \
     && grep -q '^build cistella/opencode-pandoc:local' "${r}/state/buildlog"; then
-    report ok "lane-parent-present-builds"
+    report ok "final-base-present-builds"
 else
-    report fail "lane-parent-present-builds" "exit=${code}"
+    report fail "final-base-present-builds" "exit=${code}"
 fi
 
 # 45. COPY-only recipe change marks base and descendants stale: editing
@@ -1594,7 +1606,7 @@ CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
 builds_after="$(grep -c '^build ' "${r}/state/buildlog")"
-if [[ "${code}" == "0" && "${code2}" == "0" && "${builds_before}" == "5" && "${builds_after}" == "${builds_before}" ]]; then
+if [[ "${code}" == "0" && "${code2}" == "0" && "${builds_before}" == "6" && "${builds_after}" == "${builds_before}" ]]; then
     report ok "recipe-copy-only-rebuilds-all-then-noop"
 else
     report fail "recipe-copy-only-rebuilds-all-then-noop" "exit=${code}/${code2} builds=${builds_before}/${builds_after}"
@@ -1661,6 +1673,367 @@ if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${lane_built}"
     report ok "lane-validate-fail-restores-closure"
 else
     report fail "lane-validate-fail-restores-closure" "exit=${code}"
+fi
+
+# Fragment unit-test harness: call-logging stubs for every mutating,
+# network, or absolute-path command the fragments invoke. NOTHING the
+# fragment runs may touch the host: apt-get, curl, sha256sum, tar,
+# install, mkdir, and rm are all stubbed (rm ESPECIALLY — the fragments
+# clean /var/lib/apt/lists and /tmp paths that exist on any host).
+# Real binaries used: grep, dirname, sh. CALL_LOG records the call
+# order so tests assert no later fetch/install ran after a refusal.
+new_fragbin() {
+    mkdir -p "$1"
+    cat > "$1/stub-run" <<'STUB'
+#!/usr/bin/env bash
+echo "$(basename "$0") $*" >> "${CALL_LOG:-/dev/null}"
+case "$(basename "$0")" in
+    apt-get) [[ "${1:-}" == "${FRAG_APT_FAIL_AT:-__none__}" ]] && exit 42; exit 0 ;;
+    *) exit 0 ;;
+esac
+STUB
+    for c in apt-get curl sha256sum tar install mkdir rm; do
+        cp "$1/stub-run" "$1/${c}"
+    done
+    chmod +x "$1"/stub-run "$1"/apt-get "$1"/curl "$1"/sha256sum "$1"/tar "$1"/install "$1"/mkdir "$1"/rm
+}
+
+# 47. documents fragment refuses apt update failure: stub apt-get
+#     fails on update while everything else succeeds; the fragment must
+#     exit nonzero instead of continuing to the install/fetch steps.
+r="$(new_case fragment-apt-update-refusal)"
+new_fragbin "${r}/fragbin"
+code="0"
+TARGETARCH=arm64 PANDOC_VERSION=9.9.9 PANDOC_SHA256_ARM64=0 PANDOC_SHA256_AMD64=0 \
+    DEBIAN_FRONTEND=noninteractive FRAG_APT_FAIL_AT=update CALL_LOG="${r}/calls.log" \
+    PATH="${r}/fragbin:${PATH}" \
+    sh "${r}/images/cistella/_mixins/documents/install.sh" \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" != "0" ]] && grep -q '^apt-get update' "${r}/calls.log" \
+    && ! grep -q '^curl ' "${r}/calls.log"; then
+    report ok "fragment-apt-update-refusal"
+else
+    report fail "fragment-apt-update-refusal" "exit=${code}"
+fi
+
+# 48. documents fragment refuses apt install failure (same harness,
+#     failure on the install step instead of update).
+r="$(new_case fragment-apt-install-refusal)"
+new_fragbin "${r}/fragbin"
+code="0"
+TARGETARCH=arm64 PANDOC_VERSION=9.9.9 PANDOC_SHA256_ARM64=0 PANDOC_SHA256_AMD64=0 \
+    DEBIAN_FRONTEND=noninteractive FRAG_APT_FAIL_AT=install CALL_LOG="${r}/calls.log" \
+    PATH="${r}/fragbin:${PATH}" \
+    sh "${r}/images/cistella/_mixins/documents/install.sh" \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" != "0" ]] && grep -q '^apt-get install' "${r}/calls.log" \
+    && ! grep -q '^curl ' "${r}/calls.log"; then
+    report ok "fragment-apt-install-refusal"
+else
+    report fail "fragment-apt-install-refusal" "exit=${code}"
+fi
+
+# 49. documents fragment refuses a missing package list, before any
+#     apt mutation: apt-get must never be invoked.
+r="$(new_case fragment-missing-packages)"
+new_fragbin "${r}/fragbin"
+mkdir -p "${r}/fragonly"
+cp "${r}/images/cistella/_mixins/documents/install.sh" "${r}/fragonly/"
+code="0"
+TARGETARCH=arm64 PANDOC_VERSION=9.9.9 PANDOC_SHA256_ARM64=0 PANDOC_SHA256_AMD64=0 \
+    DEBIAN_FRONTEND=noninteractive CALL_LOG="${r}/calls.log" \
+    PATH="${r}/fragbin:${PATH}" \
+    sh "${r}/fragonly/install.sh" \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" != "0" ]] && ! grep -q '^apt-get' "${r}/calls.log" \
+    && grep -q "cannot read packages.txt" "${r}/stderr"; then
+    report ok "fragment-missing-packages-refusal"
+else
+    report fail "fragment-missing-packages-refusal" "exit=${code}"
+fi
+
+# 49b. positive control: with nothing failing, the same stub harness
+#     runs the fragment to completion in order (update, install,
+#     fetch). Proves refusal verdicts come from the intended cause,
+#     not from harness breakage.
+r="$(new_case fragment-documents-control-passes)"
+new_fragbin "${r}/fragbin"
+code="0"
+TARGETARCH=arm64 PANDOC_VERSION=9.9.9 PANDOC_SHA256_ARM64=0 PANDOC_SHA256_AMD64=0 \
+    DEBIAN_FRONTEND=noninteractive CALL_LOG="${r}/calls.log" \
+    PATH="${r}/fragbin:${PATH}" \
+    sh "${r}/images/cistella/_mixins/documents/install.sh" \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+up_line="$(grep -n '^apt-get update' "${r}/calls.log" | head -1 | cut -d: -f1)"
+in_line="$(grep -n '^apt-get install' "${r}/calls.log" | head -1 | cut -d: -f1)"
+cu_line="$(grep -n '^curl ' "${r}/calls.log" | head -1 | cut -d: -f1)"
+if [[ "${code}" == "0" && -n "${up_line}" && -n "${in_line}" && -n "${cu_line}" \
+    && "${up_line}" -lt "${in_line}" && "${in_line}" -lt "${cu_line}" ]]; then
+    report ok "fragment-documents-control-passes"
+else
+    report fail "fragment-documents-control-passes" "exit=${code}"
+fi
+
+# 50. missing fragment input fails apply before any tag moves: no
+#     builds, pins byte-identical, operational-error exit.
+r="$(new_case fragment-missing-input)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+rm "${r}/images/cistella/_mixins/browser-runtime/packages.txt"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "missing or unreadable fingerprint input" "${r}/stderr"; then
+    report ok "fragment-missing-input-preflight"
+else
+    report fail "fragment-missing-input-preflight" "exit=${code} builds=${builds}"
+fi
+
+# 51. unreadable fragment input fails the same way (mode 000).
+r="$(new_case fragment-unreadable-input)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+chmod 000 "${r}/images/cistella/_mixins/documents/install.sh"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "missing or unreadable fingerprint input" "${r}/stderr"; then
+    report ok "fragment-unreadable-input-preflight"
+else
+    report fail "fragment-unreadable-input-preflight" "exit=${code} builds=${builds}"
+fi
+
+# 52. undeclared mixin-dir file is inert: narrow COPY plus fingerprint
+#     lists ignore it, so check stays clean and apply is a no-op.
+r="$(new_case fragment-extra-file-ignored)"
+seed_images "${r}"
+current_versions_env "${r}"
+echo "# undeclared" > "${r}/images/cistella/_mixins/documents/extra.txt"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+code2="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${code2}" == "0" && "${builds}" == "0" ]] \
+    && grep -q "images up to date" "${r}/stdout"; then
+    report ok "fragment-extra-file-ignored"
+else
+    report fail "fragment-extra-file-ignored" "exit=${code}/${code2} builds=${builds}"
+fi
+
+# 52b. missing fragment input fails CHECK with operational-error 2
+#     (not drift/stale 1): classification-time preflight, no mutations.
+r="$(new_case fragment-missing-input-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+rm "${r}/images/cistella/_mixins/browser-runtime/packages.txt"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "missing or unreadable fingerprint input" "${r}/stderr"; then
+    report ok "fragment-missing-input-check-fails-2"
+else
+    report fail "fragment-missing-input-check-fails-2" "exit=${code} builds=${builds}"
+fi
+
+# 52c. unreadable fragment input fails CHECK the same way.
+r="$(new_case fragment-unreadable-input-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+chmod 000 "${r}/images/cistella/_mixins/documents/install.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "missing or unreadable fingerprint input" "${r}/stderr"; then
+    report ok "fragment-unreadable-input-check-fails-2"
+else
+    report fail "fragment-unreadable-input-check-fails-2" "exit=${code} builds=${builds}"
+fi
+
+# 52d. a directory in place of a declared input fails CHECK with
+# operational-error 2 (-f rejects non-regular files; no FIFO hang).
+r="$(new_case fragment-dir-input-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+rm "${r}/images/cistella/_mixins/browser-runtime/packages.txt"
+mkdir "${r}/images/cistella/_mixins/browser-runtime/packages.txt"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "missing or unreadable fingerprint input" "${r}/stderr"; then
+    report ok "fragment-dir-input-check-fails-2"
+else
+    report fail "fragment-dir-input-check-fails-2" "exit=${code} builds=${builds}"
+fi
+
+# 54b. sed failure at the SECOND owner, after the first owner was
+#     written: apply exits 2, all six pin files byte-restored, zero
+#     tags moved, zero builds. Proves between-writes failure restores
+#     the full closure (structural write-before-tag order alone is not
+#     this proof).
+r="$(new_case divergent-write-fail-restores-all)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+mkdir -p "${r}/sedstub"
+cat > "${r}/sedstub/sed" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+    case "${a}" in
+        *opencode-pandoc/pins.sh*) exit 77 ;;
+    esac
+done
+exec /usr/bin/sed "$@"
+STUB
+chmod +x "${r}/sedstub/sed"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    PATH="${r}/sedstub:${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]]; then
+    report ok "divergent-write-fail-restores-all"
+else
+    report fail "divergent-write-fail-restores-all" "exit=${code} builds=${builds}"
+fi
+
+# 53. divergent duplicate owner is drift, not clean: litrpg carries an
+#     old OPENCODE_VERSION under a matching label while canonical and
+#     upstream agree. Check must report, never converge.
+r="$(new_case divergent-duplicate-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^OPENCODE_VERSION=.*|OPENCODE_VERSION=2.2.6|' "${r}/images/cistella/opencode-litrpg/pins.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
+    && grep -q "repaired divergent duplicate" "${r}/stdout"; then
+    report ok "divergent-duplicate-check-reports-drift"
+else
+    report fail "divergent-duplicate-check-reports-drift" "exit=${code}"
+fi
+
+# 54. divergent checksum-only duplicate is repaired to converged
+#     with no rebuild: the image already matches the canonical pins,
+#     only the hand-edited duplicate was wrong. Apply rewrites the
+#     duplicate from canonical, fingerprints reconverge, and nothing
+#     builds — proving repair without gratuitous rebuilds.
+r="$(new_case divergent-checksum-apply-repairs)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^OPENCODE_SHA256_ARM64=.*|OPENCODE_SHA256_ARM64=0000000000000000000000000000000000000000000000000000000000000000|' "${r}/images/cistella/opencode-pandoc/pins.sh"
+codex_tag="rust-v$(. "${r}/images/cistella/codex/pins.sh" && printf '%s' "${CODEX_VERSION}")"
+code="0"
+CURL_MODE=ok STUB_CODEX_TAGS="${codex_tag}" PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+got_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+got_pandoc="$( ( . "${r}/images/cistella/opencode-pandoc/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+got_litrpg="$( ( . "${r}/images/cistella/opencode-litrpg/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${got_oc}" == "${got_pandoc}" && "${got_oc}" == "${got_litrpg}" && "${builds}" == "0" ]] \
+    && grep -q "repaired divergent duplicate" "${r}/stdout"; then
+    report ok "divergent-checksum-apply-repairs"
+else
+    report fail "divergent-checksum-apply-repairs" "exit=${code} builds=${builds}"
+fi
+
+# 55. divergent held PANDOC duplicate is drift, not clean: litrpg
+#     carries PANDOC_VERSION 3.1.12 while canonical and upstream agree
+#     on 3.1.13. Check must report, never converge.
+r="$(new_case divergent-pandoc-duplicate-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^PANDOC_VERSION=.*|PANDOC_VERSION=3.1.12|' "${r}/images/cistella/opencode-litrpg/pins.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
+    && grep -q "pandoc divergent held duplicate" "${r}/stdout"; then
+    report ok "divergent-pandoc-duplicate-check-reports-drift"
+else
+    report fail "divergent-pandoc-duplicate-check-reports-drift" "exit=${code}"
+fi
+
+# 56. divergent held PANDOC duplicate is refused in apply, never
+#     auto-repaired: held pins are human-gated, so the mismatch exits
+#     operational-error with pins byte-identical and no builds (a repair
+#     could cement a bad hand-edit of the canonical file, which unlike
+#     the opencode owner is not verified against upstream here).
+r="$(new_case divergent-pandoc-duplicate-apply-refuses)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^PANDOC_VERSION=.*|PANDOC_VERSION=3.1.12|' "${r}/images/cistella/opencode-litrpg/pins.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]] \
+    && grep -q "never auto-repaired" "${r}/stderr"; then
+    report ok "divergent-pandoc-duplicate-apply-refuses"
+else
+    report fail "divergent-pandoc-duplicate-apply-refuses" "exit=${code} builds=${builds}"
+fi
+
+# 57. checksum-only held PANDOC divergence is drift: version matches
+#     but a litrpg checksum differs from canonical. The tuple comparison
+#     covers checksums, not just the version.
+r="$(new_case divergent-pandoc-checksum-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^PANDOC_SHA256_ARM64=.*|PANDOC_SHA256_ARM64=0000000000000000000000000000000000000000000000000000000000000000|' "${r}/images/cistella/opencode-litrpg/pins.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
+    && grep -q "pandoc divergent held duplicate" "${r}/stdout"; then
+    report ok "divergent-pandoc-checksum-check-reports-drift"
+else
+    report fail "divergent-pandoc-checksum-check-reports-drift" "exit=${code}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

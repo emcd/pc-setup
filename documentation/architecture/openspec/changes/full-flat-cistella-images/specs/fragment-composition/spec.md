@@ -3,9 +3,9 @@
 ### Requirement: Source-only install fragments
 Each mixin SHALL live at `images/cistella/_mixins/<name>/` as an explicit input contract (arch, version, checksum, destination file list) with deterministic validation and typed refusal. Fragments SHALL be invoked from concrete lane recipes and SHALL NOT generate Containerfile instructions, stages, or image metadata.
 
-#### Scenario: Fragment layout is explicit
-- **WHEN** a lane consumes a mixin
-- **THEN** the lane recipe names the mixin and its ordered position, and all fragment inputs are files under that mixin's directory
+#### Scenario: Fragment install aborts on first failure
+- **WHEN** any fragment install step (package-list read, apt update, apt install, fetch, checksum, extraction) fails
+- **THEN** the script exits nonzero immediately and no later payload is installed
 
 #### Scenario: Instruction generation is out of scope
 - **WHEN** a composition need requires synthesizing Containerfile instructions, allocating stages, or merging image metadata
@@ -45,6 +45,10 @@ The final lane's `pins.sh` SHALL declare every pin its composition consumes, dup
 - **WHEN** a later consumer fails after discovery rewrote several owners
 - **THEN** all affected lane pin bytes are restored alongside all preserved tags
 
+#### Scenario: Write failure between owners restores all
+- **WHEN** applying a multi-owner write fails partway through the owner list
+- **THEN** all six pin files are byte-restored, no tags move, and no builds run
+
 ### Requirement: Source-consumer closure staleness
 A mixin edit SHALL stale its direct consumers plus their image descendants, and SHALL NOT stale unrelated siblings or ancestors. A missing declared fragment input SHALL fail preflight before any tag moves. Composition membership or order changes SHALL stale the affected final.
 
@@ -54,7 +58,23 @@ A mixin edit SHALL stale its direct consumers plus their image descendants, and 
 
 #### Scenario: Missing input fails fast
 - **WHEN** a lane declares a fragment input that does not exist
-- **THEN** refresh fails before moving any tag
+- **THEN** refresh fails operational-error before writing pins or moving any tag, with no builds attempted
+
+#### Scenario: Non-regular input fails closed
+- **WHEN** a declared input path exists but is not a readable regular file (directory, FIFO, socket, or unreadable)
+- **THEN** refresh exits operational-error 2 in both check and apply modes with zero mutations, rather than misreading it as clean or stale
+
+#### Scenario: Undeclared mixin file is inert
+- **WHEN** a file is added to a mixin directory without being declared in a COPY or fingerprint list
+- **THEN** no image goes stale and check stays converged
+
+#### Scenario: Divergent duplicate reports drift in check
+- **WHEN** a duplicated owner on an auto-tracked (non-held) channel disagrees with the canonical tuple while upstream is unchanged
+- **THEN** check reports drift instead of converging, and apply repairs every owner transactionally
+
+#### Scenario: Divergent held duplicate is refused, not repaired
+- **WHEN** a duplicated owner on a notify-only held track (pandoc) disagrees with the canonical tuple in version or checksums
+- **THEN** check reports drift instead of converging, and apply refuses operational-error with no pin, tag, or build mutation; a held tuple is never auto-repaired toward either side nor promoted, and identical human-approved tuples remain outside upstream auto-verification
 
 ### Requirement: Flat finals with private stages allowed
 Every final lane image SHALL start `FROM` the base image and SHALL NOT `FROM` another final-lane or harness tag. Private verified-artifact fetch stages inside a lane build remain allowed and SHALL leave no download or build-tool residue in the final image.
@@ -78,8 +98,12 @@ A failure after one or more flat consumers build or validate SHALL restore all p
 - **THEN** all preserved tags and pins are restored and a subsequent check reports the work as still pending
 
 ### Requirement: Capability validation per composition
-Validation SHALL prove claimed capabilities per final: documents rendering proof where documents are claimed, browser-runtime proof (bounded headless launch against local fixture content where live proof is authorized) where browser use is claimed, plus lane extras. Package presence alone SHALL NOT count as proof, and browser libraries SHALL NOT imply new sockets, devices, network exposure, or sandbox exemptions.
+Validation SHALL prove claimed capabilities per final: documents rendering proof where documents are claimed, and browser-runtime dependency-load proof (every claimed SONAME dynamically loadable, plus a negative control) where browser libraries are claimed. Actual browser execution is explicitly OUT of scope for libraries-only finals and is deferred to an authorized browser-using consumer; no launch, display, network, or sandbox exemption is exercised or implied. Package presence alone SHALL NOT count as proof, and browser libraries SHALL NOT imply new sockets, devices, network exposure, or sandbox exemptions.
 
 #### Scenario: Union proves both
 - **WHEN** a composed final claims documents and browser-runtime
-- **THEN** validation executes both proofs, not merely presence checks
+- **THEN** validation executes the documents render proof and the library load proof with negative control, not merely presence checks
+
+#### Scenario: No browser execution without authorization
+- **WHEN** a final ships only browser libraries and no browser binary
+- **THEN** validation asserts loadability only and records browser execution as deferred, never as run

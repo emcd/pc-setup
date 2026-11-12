@@ -1,26 +1,18 @@
-# LitRPG lane image: the pandoc lane plus the Playwright system libraries.
-# LitRPG-only; other handbook consumers stay on the shared pandoc lane.
-FROM localhost/cistella/opencode-pandoc:local
+# LitRPG lane: the shared base plus harness, documents, browser-runtime,
+# and comfy-tools fragments. LitRPG-only; other handbook consumers stay
+# on the shared documents lane.
+FROM localhost/cistella/base:local
 
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
-        libasound2t64 \
-        libatk-bridge2.0-0t64 \
-        libatk1.0-0t64 \
-        libatspi2.0-0t64 \
-        libcups2t64 \
-        libdbus-1-3 \
-        libgbm1 \
-        libpango-1.0-0 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxfixes3 \
-        libxkbcommon0 \
-        libxrandr2 \
-    && rm -rf /var/lib/apt/lists*
-
-# ComfyUI MCP server + CLI for agent-driven generations from LitRPG seats.
+ARG TARGETARCH
+ARG OPENCODE_VERSION
+ARG OPENCODE_SHA256_ARM64
+ARG OPENCODE_SHA256_AMD64
+ARG PANDOC_VERSION
+ARG PANDOC_SHA256_ARM64
+ARG PANDOC_SHA256_AMD64
+ARG COMFY_MCP_VERSION
+ARG COMFY_CLI_VERSION
 # uv tool shims land in /usr/local/bin (same store as the base tools);
 # COMFY_BIN=/usr/local/bin/comfy is the stable path for MCP configs.
 # (ENV re-declared here: the base UV_* settings live in its builder
@@ -28,7 +20,16 @@ RUN apt-get update \
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
 ENV UV_TOOL_DIR=/usr/local/share/uv/tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
-ARG COMFY_MCP_VERSION
-ARG COMFY_CLI_VERSION
-RUN uv tool install "comfy-mcp==${COMFY_MCP_VERSION}" \
-    && uv tool install "comfy-cli==${COMFY_CLI_VERSION}"
+# Explicit declared files only: unlisted mixin-dir files are neither
+# copied nor fingerprinted, so they cannot affect the image silently.
+COPY --from=mixins harness-opencode/install.sh /tmp/mixins/harness-opencode/install.sh
+COPY --from=mixins documents/install.sh /tmp/mixins/documents/install.sh
+COPY --from=mixins documents/packages.txt /tmp/mixins/documents/packages.txt
+COPY --from=mixins browser-runtime/install.sh /tmp/mixins/browser-runtime/install.sh
+COPY --from=mixins browser-runtime/packages.txt /tmp/mixins/browser-runtime/packages.txt
+COPY --from=mixins comfy-tools/install.sh /tmp/mixins/comfy-tools/install.sh
+RUN sh /tmp/mixins/harness-opencode/install.sh \
+    && sh /tmp/mixins/documents/install.sh \
+    && sh /tmp/mixins/browser-runtime/install.sh \
+    && sh /tmp/mixins/comfy-tools/install.sh \
+    && rm -rf /tmp/mixins
