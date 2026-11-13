@@ -24,11 +24,8 @@ Before implementing code changes, consult these files in `.auxiliary/agents/stan
   - Start at the repository root `README.{md,rst}`, then read the nearest relevant subtree README.
   - After reading the nearest README, scope code searches to that subtree before considering repo-wide searches.
   - If a touched subsystem README is stale after your change, update it in the same batch.
-- Use relative paths rather than absolute paths when possible (relative paths are less likely to trigger tool call permission requests).
-- Do not write to paths outside the current project unless explicitly requested.
-- Do **not** run `find`, `fd`, or other unbounded recursive walks on `/`, `~`, or other home-wide roots. Scope searches to the current project/worktree or a path the operator named. Prefer harness file-search tools when available.
 - Notebook and project-note operations go through the **`nb` MCP** tools. Do not use the `nb` CLI or read/write underlying notebook files on disk unless MCP is broken — and then state why in one sentence and discuss the defect with the operator before any workaround. Selectors are not repo filesystem paths; see @.auxiliary/agents/procedures/notebook.md.
-- Use `.auxiliary/scribbles` for scratch work and one-off experiments instead of `/tmp`.
+- Use `.auxiliary/scribbles` for throw-away scripts and experiments.
 - Use `.auxiliary/temporary` for ephemeral test state and build artifacts that are safe to delete.
 - In sandboxed environments (e.g., Codex CLI), treat file/network permission failures as escalation boundaries:
   - If an operation fails due to sandbox, file access, or network restrictions, rerun it with user escalation.
@@ -98,7 +95,14 @@ Use an OPSX skill when the request mentions a proposal, spec, or plan; introduce
 
 ## Delegated Review and Stacked Commits
 
-**Read this section before reviewing or stacking commits.** @.auxiliary/agents/procedures/reviews.md covers the delegated review flow, review request packet format, and how to handle stacked commits with `--fixup`/`--autosquash`.
+Compliance with @.auxiliary/agents/procedures/reviews.md is **mandatory** for delegated work, not advisory. The non-negotiable rules:
+
+- Address review findings with `git commit --fixup <target-hash>` (or a first-class follow-up commit carrying its stated rationale where the procedure requires one); do not send plain follow-up commits for in-stack findings, and do not amend reviewed commits while review is in progress.
+- Hold fixups unsquashed until **final** approval; autosquash only after final approval.
+- Keep the reviewed stack hash-stable: the approved hashes are the handoff invariant, and any rewrite other than final autosquash stales the packet and returns it to review.
+- The operator may refuse any stack that does not follow this procedure.
+- Route the initial packet to the **Tier-1 Reviewer** only, after operator pre-review; do not Cc the Tier-2 Reviewer or fan the packet across seats.
+- **Read the full procedure before reviewing or stacking commits.** It covers the review flow, packet format, and stacked-commit handling.
 
 # Collaboration
 

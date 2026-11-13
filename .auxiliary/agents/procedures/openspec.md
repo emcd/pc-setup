@@ -11,6 +11,24 @@ deliver workflow instructions through the agentsmgr distribution pipeline.
 - `opsx-sync` -- sync delta specs into main specs.
 - `opsx-archive` -- archive a completed change.
 
+## Clone Setup
+
+A fresh clone is missing everything only populate creates: the
+`openspec/` symlink (to `documentation/architecture/openspec`),
+agent harness symlinks, and MCP discovery symlinks such as
+`.mcp.json`. The canonical definitions those links point at —
+`.auxiliary/configuration/mcp-servers.json` and coder settings —
+are rendered by Copier and tracked. The `.git/info/exclude` entries
+covering the managed links are established alongside population, not
+inherited. After any `copier copy` or `copier update` involving the
+`agents-common` Copier template, you must run:
+
+    agentsmgr populate project github:emcd/agents-common@master#distribution
+
+Without the `openspec` symlink, `openspec validate --all --strict`
+reports "No items found to validate" and exits 0 while validating
+nothing; do not report that as a pass.
+
 ## CLI State Queries
 
 - `openspec list` and `openspec list --specs` -- active changes and specs.

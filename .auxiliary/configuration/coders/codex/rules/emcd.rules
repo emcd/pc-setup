@@ -66,9 +66,9 @@ prefix_rule(
     justification="List git stashes.",
 )
 prefix_rule(
-    pattern=["git", "worktree", "list"],
+    pattern=["git", "worktree"],
     decision="allow",
-    justification="List git worktrees.",
+    justification="Manage git worktrees inside the project clone.",
 )
 
 # GitHub CLI (read-oriented operations).

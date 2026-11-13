@@ -1,6 +1,6 @@
 # Delegated Review Flow
 
-Use this flow when multiple team members can access the same repository through branches or linked worktrees.
+Use this flow when an author requests review from reviewers working in other repositories — or in other clones of the same repository.
 
 ## Roles
 
@@ -15,6 +15,8 @@ The same person may wear more than one role only when the project explicitly all
 
 Send the initial packet to the Tier-1 Reviewer only. Do not Cc the Tier-2 Reviewer, and do not send both tiers the same packet at once. Except for cross-functional work, a Tier-1 review goes to the designated Tier-1 Reviewer for that lane, area, project, or team. Do not fan the same packet across every Tier-1 seat.
 
+Reviews are bilateral: the author and the active reviewer only. Do not Cc anyone beyond the active pair — not the other reviewer, not the coordinator. The integrator enters only at the merge request, after final approval and autosquash, with cleaned hashes, tree identity against the reviewed tree, validation summary, and approval trail.
+
 The Tier-2 aim is how we spend scarce Tier-2 credits. It is not a scope limit. Either reviewer may inspect any part of the stack, including a later fix, and may take an integrative or a pinhole view. Author concerns, suggested focus, or "please only look at X" are context, not a restriction. Do not dictate what a reviewer reviews.
 
 The author may request a Tier-2 review after Tier-1 approval. The Tier-1 Reviewer and the operator may require one. Skip it for mechanical or already-patterned changes unless one of them wants it.
@@ -28,6 +30,7 @@ After Tier-1 approval:
 
 ## Review cycle
 
+0. Operator pre-review. The author sends the scoped proposal to the **operator** for pre-review before any Tier-1/Tier-2 dispatch. Foundational objections are cheapest here; do not spend tier review on direction the operator would reject. Proceed on operator go-ahead.
 1. Author implements the scoped change, runs validation, and creates local/private review commit(s) so the diff is hash-stable and hook-checked.
 2. Author rebases onto the agreed `<local-integration-base>` and sends a review packet to the **Tier-1 Reviewer** only.
 3. Tier-1 Reviewer approves or requests changes.
@@ -42,16 +45,24 @@ After Tier-1 approval:
 
 Hold the unsquashed fixup stack for the entire technical review. Autosquash only after final approval, as the step that produces the stack the integrator merges when the base has not moved.
 
-The agreed `<local-integration-base>` is a Git ref in the current repository, such as local `master` or a local lane integration branch. It is not a filesystem path and is not a remote-tracking ref. Do not use `origin/master`, another `origin/*` ref, a path like `/path/to/repo/master`, or a raw commit hash as the rebase base unless the coordinator explicitly names that exact ref or hash. When in doubt, ask for the local branch/ref name before rebasing. Confirm it with `git branch --list <local-integration-base>` or `git rev-parse --verify <local-integration-base>` before running `git rebase`.
+The agreed `<local-integration-base>` is a Git ref in the current repository, such as local `master` or a local lane integration branch. It is not a filesystem path and is not a remote-tracking ref. Do not use `origin/master`, another `origin/*` ref, a path like `/path/to/repo/master`, or a raw commit hash as the rebase base unless the coordinator explicitly names that exact ref or hash. The exception is lane-clone syncing, which pulls from `origin/<integration-base>` as described below; that upstream is named by the clone topology, not by per-review direction. When in doubt, ask for the local branch/ref name before rebasing. Confirm it with `git branch --list <local-integration-base>` or `git rev-parse --verify <local-integration-base>` before running `git rebase`.
 
 ## Integrator flow
 
 1. Confirm the stack is approved by every engaged tier and already cleaned (fixups autosquashed). If fixups are still present, send it back to the author to fold before merge — do not start a content review.
-2. Confirm the cleaned stack is based on the **current** `<local-integration-base>`, and that the handoff names every engaged tier and states that each has approved. If the base has advanced (stale-base stack), **refuse the merge handoff** and route the author to rebase first. After rebase: a byte-identical stack may return as a merge handoff with fresh lint/test evidence; a non-identical stack follows the non-identical rebase rule under Review tiers. Do not merge a stale-base cleaned stack.
-3. If the base is current and the merge is otherwise clear, merge approved review branches with `--no-ff` when preserving a delegated-work or lane boundary; this creates a clear integration point and avoids mutually rebasing branches into increasingly long histories.
-4. Merge/push only after explicit human approval.
+2. Fetch the approved work from the author's repository by filesystem path:
 
-Prefer reviewing commits by hash. Use an explicit worktree path only for uncommitted diffs or commits in a different repository. Use patch artifacts only as a fallback when the reviewer cannot access the repository, branch, or worktree directly.
+   ```sh
+   git fetch /path/to/author/repo <merge-target>
+   ```
+
+   Repositories in the clones-of-clone topology do not share objects. A commit hash is not resolvable in your repository until you fetch from the repository that holds it. The review packet must include the author's repository filesystem path and the intended merge target branch for this reason.
+3. Confirm the fetched stack is based on the **current** `<local-integration-base>`, and that the handoff names every engaged tier and states that each has approved. If the base has advanced (stale-base stack), **refuse the merge handoff** and route the author to rebase first. After rebase: a byte-identical stack may return as a merge handoff with fresh lint/test evidence; a non-identical stack follows the non-identical rebase rule under Review tiers. Do not merge a stale-base cleaned stack.
+4. If the base is current and the merge is otherwise clear, merge the fetch head with `--no-ff` when preserving a delegated-work or lane boundary; this creates a clear integration point and avoids mutually rebasing branches into increasingly long histories.
+5. When the branch owner is also the project owner, the owner merges the reviewer-approved cleaned stack directly after human approval, without a coordinator handoff.
+6. Merge/push only after explicit human approval.
+
+Prefer reviewing commits by hash. Always give the path to your repository as well: its objects are not shared with the reviewer's repository, so hashes alone are not reviewable until fetched. Use patch artifacts only as a fallback when the reviewer cannot access the repository directly.
 
 # Review Request Packet
 
@@ -59,6 +70,7 @@ For non-trivial delegated work, review requests should include:
 
 - Base ref for rebase: the `<local-integration-base>` to use for `git rebase` or `git rebase -i --autosquash`.
 - Intended merge target: the branch/ref where the work should eventually land. This may differ from the rebase base, and may be a shared branch.
+- Author's repository filesystem path: the path to the author's repository, required for fetching the work in topologies without shared objects.
 - Complete commit list with hashes and one-line descriptions.
 - Validation commands run and results, including skipped checks or known gaps.
 - Intended contract: what must be true after the change lands.
@@ -67,13 +79,13 @@ For non-trivial delegated work, review requests should include:
 
 Author-provided review concerns are supplemental context, not a limit on review scope, and not an instruction the reviewer must follow. Independent inspection remains the reviewer responsibility.
 
-Packets to the **integrator** after final approval are merge handoffs: cleaned commit list, validation status, base/merge refs, and every engaged tier with its approval. They apply when the base is unchanged since final approval (autosquash-only hash changes are fine), or after a post-approval rebase that leaves a **byte-identical** stack with author re-validation noted. They are not a review packet. A non-identical post-approval rebase follows the non-identical rebase rule under Review tiers, not a merge handoff.
+Packets to the **integrator** after final approval are merge handoffs: cleaned commit list, validation status, base/merge refs, author's repository filesystem path, and every engaged tier with its approval. They apply when the base is unchanged since final approval (autosquash-only hash changes are fine), or after a post-approval rebase that leaves a **byte-identical** stack with author re-validation noted. They are not a review packet. A non-identical post-approval rebase follows the non-identical rebase rule under Review tiers, not a merge handoff.
 
 # Reviewing Stacked Commits
 
 When feedback targets one specific commit in the current review stack, use `git commit --fixup <target-hash>`. This applies even when the review stack has only one commit. Do not directly amend reviewed commits while review is in progress; fixup commits preserve review visibility until the stack is ready for final cleanup.
 
-A fixup is valid only when the entire fix belongs to code introduced by one target commit in the current stack. Use a first-class follow-up commit when the fix touches code that is already merged to the base branch, when the fix spans or refactors code introduced by two or more in-stack commits, or when the operator requests a distinct design change. Name the review finding or rationale in the first-class commit message or review reply so reviewers know why it is not a fixup.
+A fixup is valid only when the entire fix belongs to code introduced by one target commit in the current stack. Prefer a fixup wherever one is valid: fixups vanish at fold time, leaving the target's substantive message intact, while narrative fix commits ("round 2", "review feedback") persist as noise in the folded history. Use a first-class follow-up commit when the fix touches code that is already merged to the base branch, when the fix spans or refactors code introduced by two or more in-stack commits, or when the operator requests a distinct design change. Name the review finding or rationale in the first-class commit message or review reply so reviewers know why it is not a fixup.
 
 The author holds targeted fixups in place until **final** approval. Each fixup stays visible on the branch in the context of its target commit, which preserves review visibility for the response. Do **not** autosquash before or during technical review — that rewrites hashes, stales the packet under review, and hides which fix addressed which finding. After final approval, the author autosquashes into the target commits.
 
@@ -111,6 +123,6 @@ In an interactive human terminal you may instead run `git rebase -i --autosquash
 
 If the result is wrong, recover with `git reset --hard ORIG_HEAD` — git sets `ORIG_HEAD` to the exact pre-rebase position regardless of how far back `<local-integration-base>` was.
 
-For example, run `git rebase master` from the worktree branch when the coordinator says to rebase onto local `master`. Do not write `git rebase /path/to/repo/master`; that is a filesystem path, not a Git ref.
+For example, run `git pull --rebase origin master` from the clone when the coordinator says to sync with local `master`. Do not write `git rebase /path/to/repo/master`; that is a filesystem path, not a Git ref.
 
 If `git commit` fails because a hook rejects it, assume no commit was created unless Git clearly reports otherwise. Fix the hook finding, restage the intended files, and rerun the same `git commit` command. Do not use `git commit --amend` to recover from a failed commit attempt.
