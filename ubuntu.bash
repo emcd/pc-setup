@@ -127,6 +127,29 @@ export PATH="${PATH}:${HOME}/.local/bin:${HOME}/.local/share/npm-packages/bin:${
 
 export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME}/claude"
 export CODEX_HOME="${XDG_CONFIG_HOME}/codex"
+
+# Per-host secrets (never committed): every KEY=VALUE file named
+# *.env directly under "${XDG_CONFIG_HOME:-${HOME}/.config}/SECRET-VARIABLES/"
+# is exported when present (e.g. mcp-servers.env). An absent directory
+# is a no-op. Each file is guarded individually: a group/world-readable
+# or foreign-owned file is skipped with a warning, never loaded.
+if [[ -d "${XDG_CONFIG_HOME:-${HOME}/.config}/SECRET-VARIABLES" ]]; then
+    shopt -s nullglob
+    for _secrets_file in "${XDG_CONFIG_HOME:-${HOME}/.config}"/SECRET-VARIABLES/*.env; do
+        if [[ "$(stat -c '%U' "${_secrets_file}")" != "${USER}" ]]; then
+            echo "warning: ${_secrets_file} is not owned by ${USER}; skipping" >&2
+        elif (( 8#"$(stat -c '%a' "${_secrets_file}")" & 0077 )); then
+            echo "warning: ${_secrets_file} is group/world-readable; skipping (chmod 600)" >&2
+        else
+            set -a
+            # shellcheck disable=SC1091
+            . "${_secrets_file}"
+            set +a
+        fi
+    done
+    unset _secrets_file
+    shopt -u nullglob
+fi
 EOF
 source "${HOME}/.bashrc"
 
