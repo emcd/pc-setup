@@ -70,3 +70,13 @@ provision_directory "${cache_home}/cistella/in-container/local-bin"
 # Plain dirs, no seeding.
 provision_directory "${state_home}/litrpg-rnd"
 provision_directory "${config_home}/litrpg-rnd"
+
+# AI Workbench shared state (opencode--aiwb.toml mounts): ai-experiments
+# team dirs under ~/Dropbox/common plus team config; config mounts are
+# read-only in the seat. Plain dirs, no seeding (Dropbox content and the
+# team config materialize on the target seat).
+provision_directory "${config_home}/aiwb"
+provision_directory "${HOME}/Dropbox/common/cache/aiwb"
+provision_directory "${HOME}/Dropbox/common/configuration/aiwb"
+provision_directory "${HOME}/Dropbox/common/data/aiwb"
+provision_directory "${HOME}/Dropbox/common/state/aiwb"

@@ -6,6 +6,7 @@ command = ['opencode', '--standalone']
 environment-acceptances = [
   'AGENTMUX_BUNDLE',
   'AGENTMUX_SESSION',
+  'CONTEXT7_API_KEY',
 ]
 
 [isolator]

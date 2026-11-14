@@ -6,6 +6,7 @@ command = ['opencode', '--standalone']
 environment-acceptances = [
   'AGENTMUX_BUNDLE',
   'AGENTMUX_SESSION',
+  'CONTEXT7_API_KEY',
 ]
 
 [isolator]
@@ -131,6 +132,22 @@ mode = 'ro'
 [[mounts]]
 host-source = '~/.local/state/litrpg-rnd'
 container-target = '{{core:container-home}}/.local/state/litrpg-rnd'
+mode = 'rw'
+
+## ComfyUI (shared image-generation data)
+
+# Models are read-only (large, downloaded once); outputs are read-write
+# so seats collect generations and stage inputs. Mirrors the run-helper
+# and unit mounts; the output dir is the shared LitRPG handoff point.
+
+[[mounts]]
+host-source = '~/.local/share/comfyui/models'
+container-target = '{{core:container-home}}/.local/share/comfyui/models'
+mode = 'rw'
+
+[[mounts]]
+host-source = '~/.local/share/comfyui/output'
+container-target = '{{core:container-home}}/.local/share/comfyui/output'
 mode = 'rw'
 
 ## Third-Party Configurations
