@@ -1,0 +1,17 @@
+# aiwb lane: the shared base plus the harness and browser-runtime
+# fragments. ai-experiments only; no documents payload.
+FROM localhost/cistella/base:local
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG OPENCODE_VERSION
+ARG OPENCODE_SHA256_ARM64
+ARG OPENCODE_SHA256_AMD64
+# Explicit declared files only: unlisted mixin-dir files are neither
+# copied nor fingerprinted, so they cannot affect the image silently.
+COPY --from=mixins harness-opencode/install.sh /tmp/mixins/harness-opencode/install.sh
+COPY --from=mixins browser-runtime/install.sh /tmp/mixins/browser-runtime/install.sh
+COPY --from=mixins browser-runtime/packages.txt /tmp/mixins/browser-runtime/packages.txt
+RUN sh /tmp/mixins/harness-opencode/install.sh \
+    && sh /tmp/mixins/browser-runtime/install.sh \
+    && rm -rf /tmp/mixins

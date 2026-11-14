@@ -48,6 +48,9 @@ cp "${repo_root}/images/cistella/opencode-pandoc/Containerfile" "${skeleton}/ima
 mkdir -p "${skeleton}/images/cistella/opencode-litrpg"
 cp "${repo_root}/images/cistella/opencode-litrpg/pins.sh" "${skeleton}/images/cistella/opencode-litrpg/"
 cp "${repo_root}/images/cistella/opencode-litrpg/Containerfile" "${skeleton}/images/cistella/opencode-litrpg/"
+mkdir -p "${skeleton}/images/cistella/opencode-aiwb"
+cp "${repo_root}/images/cistella/opencode-aiwb/pins.sh" "${skeleton}/images/cistella/opencode-aiwb/"
+cp "${repo_root}/images/cistella/opencode-aiwb/Containerfile" "${skeleton}/images/cistella/opencode-aiwb/"
 mkdir -p "${skeleton}/images/cistella/_mixins"
 cp -r "${repo_root}/images/cistella/_mixins/." "${skeleton}/images/cistella/_mixins/"
 cp "${repo_root}/images/cistella/base/Containerfile" "${skeleton}/images/cistella/base/"
@@ -395,7 +398,7 @@ seed_images() {
     # $1 fixture root; :local tags present with labels matching the
     # effective closure fingerprint (same input list as refresh-images).
     local root="$1" name h id rel files
-    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg opencode-aiwb; do
         id="img-${name}-0"
         echo "cistella/${name}:local=${id}" >> "${root}/state/ids"
     done
@@ -430,9 +433,17 @@ seed_images() {
                     images/cistella/_mixins/browser-runtime/install.sh \
                     images/cistella/_mixins/browser-runtime/packages.txt \
                     images/cistella/_mixins/comfy-tools/install.sh ;;
+            opencode-aiwb)
+                fingerprint_files base
+                printf '%s\n' \
+                    images/cistella/opencode-aiwb/pins.sh \
+                    images/cistella/opencode-aiwb/Containerfile \
+                    images/cistella/_mixins/harness-opencode/install.sh \
+                    images/cistella/_mixins/browser-runtime/install.sh \
+                    images/cistella/_mixins/browser-runtime/packages.txt ;;
         esac
     }
-    for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
+    for name in base opencode codex muse opencode-pandoc opencode-litrpg opencode-aiwb; do
         files=()
         while IFS= read -r rel; do
             files+=("${root}/${rel}")
@@ -477,7 +488,8 @@ pins_sha() {
         "$1/images/cistella/codex/pins.sh" \
         "$1/images/cistella/muse/pins.sh" \
         "$1/images/cistella/opencode-pandoc/pins.sh" \
-        "$1/images/cistella/opencode-litrpg/pins.sh" | sha256sum | cut -d' ' -f1
+        "$1/images/cistella/opencode-litrpg/pins.sh" \
+        "$1/images/cistella/opencode-aiwb/pins.sh" | sha256sum | cut -d' ' -f1
 }
 
 current_versions_env() {
@@ -712,7 +724,7 @@ CURL_MODE=ok STUB_OC_VERSION="9.99.0" STUB_CODEX_TAGS="rust-v9.99.0" \
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout" 2>"${r}/stderr" || code="$?"
 ok_labels=1
-for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
+for name in base opencode codex muse opencode-pandoc opencode-litrpg opencode-aiwb; do
     id="$(local_id "${r}" "cistella/${name}:local")"
     want=""
     case "${name}" in
@@ -720,6 +732,7 @@ for name in base opencode codex muse opencode-pandoc opencode-litrpg; do
         opencode|codex|muse) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/${name}/pins.sh" "${r}/images/cistella/${name}/Containerfile" "${r}/images/cistella/_mixins/harness-${name}/install.sh" | sha256sum | cut -d' ' -f1)" ;;
         opencode-pandoc) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode-pandoc/pins.sh" "${r}/images/cistella/opencode-pandoc/Containerfile" "${r}/images/cistella/_mixins/harness-opencode/install.sh" "${r}/images/cistella/_mixins/documents/install.sh" "${r}/images/cistella/_mixins/documents/packages.txt" | sha256sum | cut -d' ' -f1)" ;;
         opencode-litrpg) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode-litrpg/pins.sh" "${r}/images/cistella/opencode-litrpg/Containerfile" "${r}/images/cistella/_mixins/harness-opencode/install.sh" "${r}/images/cistella/_mixins/documents/install.sh" "${r}/images/cistella/_mixins/documents/packages.txt" "${r}/images/cistella/_mixins/browser-runtime/install.sh" "${r}/images/cistella/_mixins/browser-runtime/packages.txt" "${r}/images/cistella/_mixins/comfy-tools/install.sh" | sha256sum | cut -d' ' -f1)" ;;
+        opencode-aiwb) want="$(cat "${r}/images/cistella/base/pins.sh" "${r}/images/cistella/base/Containerfile" "${r}/images/cistella/base/profile.d/seat-path.sh" "${r}/images/cistella/opencode-aiwb/pins.sh" "${r}/images/cistella/opencode-aiwb/Containerfile" "${r}/images/cistella/_mixins/harness-opencode/install.sh" "${r}/images/cistella/_mixins/browser-runtime/install.sh" "${r}/images/cistella/_mixins/browser-runtime/packages.txt" | sha256sum | cut -d' ' -f1)" ;;
     esac
     got="$(grep -E "^${id}=" "${r}/state/imglabels" | cut -d= -f2-)"
     [[ "${got}" == "${want}" ]] || ok_labels=0
@@ -1520,12 +1533,12 @@ builds="$(grep -c '^build ' "${r}/state/buildlog")"
 first="$(grep '^build ' "${r}/state/buildlog" | head -1)"
 last="$(grep '^build ' "${r}/state/buildlog" | tail -1)"
 all_present=1
-for n in base opencode codex muse opencode-pandoc opencode-litrpg; do
+for n in base opencode codex muse opencode-pandoc opencode-litrpg opencode-aiwb; do
     grep -q "^build cistella/${n}:local" "${r}/state/buildlog" || all_present=0
 done
-if [[ "${code}" == "0" && "${builds}" == "6" && "${all_present}" == "1" \
+if [[ "${code}" == "0" && "${builds}" == "7" && "${all_present}" == "1" \
     && "${first}" == "build cistella/base:local label="* \
-    && "${last}" == "build cistella/opencode-litrpg:local label="* ]]; then
+    && "${last}" == "build cistella/opencode-aiwb:local label="* ]]; then
     report ok "pandoc-inherited-base-rebuilds-all"
 else
     report fail "pandoc-inherited-base-rebuilds-all" "exit=${code} builds=${builds}"
@@ -1606,7 +1619,7 @@ CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r
     PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
     >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
 builds_after="$(grep -c '^build ' "${r}/state/buildlog")"
-if [[ "${code}" == "0" && "${code2}" == "0" && "${builds_before}" == "6" && "${builds_after}" == "${builds_before}" ]]; then
+if [[ "${code}" == "0" && "${code2}" == "0" && "${builds_before}" == "7" && "${builds_after}" == "${builds_before}" ]]; then
     report ok "recipe-copy-only-rebuilds-all-then-noop"
 else
     report fail "recipe-copy-only-rebuilds-all-then-noop" "exit=${code}/${code2} builds=${builds_before}/${builds_after}"
@@ -2034,6 +2047,199 @@ if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
     report ok "divergent-pandoc-checksum-check-reports-drift"
 else
     report fail "divergent-pandoc-checksum-check-reports-drift" "exit=${code}"
+fi
+
+# 58. shared browser-runtime edit stales litrpg AND aiwb only: the
+#     fragment is consumed by exactly those two finals.
+r="$(new_case aiwb-shared-fragment-precision)"
+seed_images "${r}"
+current_versions_env "${r}"
+echo "# precision probe" >> "${r}/images/cistella/_mixins/browser-runtime/install.sh"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" == "1" ]] \
+    && grep -q "opencode-litrpg" "${r}/stdout" \
+    && grep -q "opencode-aiwb" "${r}/stdout" \
+    && ! grep -q "opencode-pandoc" "${r}/stdout" \
+    && ! grep -q " opencode " "${r}/stdout" \
+    && ! grep -q " codex " "${r}/stdout" \
+    && ! grep -q " muse " "${r}/stdout" \
+    && ! grep -q " base " "${r}/stdout"; then
+    report ok "aiwb-shared-fragment-stales-both-consumers"
+else
+    report fail "aiwb-shared-fragment-stales-both-consumers" "exit=${code}"
+fi
+code="0"
+: > "${r}/state/buildlog"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code="$?"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${builds}" == "2" ]] \
+    && grep -q '^build cistella/opencode-litrpg:local' "${r}/state/buildlog" \
+    && grep -q '^build cistella/opencode-aiwb:local' "${r}/state/buildlog" \
+    && ! grep -q '^build cistella/base:local' "${r}/state/buildlog"; then
+    report ok "aiwb-shared-fragment-rebuilds-both-consumers"
+else
+    report fail "aiwb-shared-fragment-rebuilds-both-consumers" "exit=${code} builds=${builds}"
+fi
+
+# 59. lane-only edit stales only aiwb: appending to its own
+#     Containerfile leaves every other final converged.
+r="$(new_case aiwb-lane-only-precision)"
+seed_images "${r}"
+current_versions_env "${r}"
+echo "# lane probe" >> "${r}/images/cistella/opencode-aiwb/Containerfile"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+if [[ "${code}" == "1" ]] \
+    && grep -q "out of sync):opencode-aiwb *$" "${r}/stdout"; then
+    report ok "aiwb-lane-only-stales-aiwb-alone"
+else
+    report fail "aiwb-lane-only-stales-aiwb-alone" "exit=${code}"
+fi
+code="0"
+: > "${r}/state/buildlog"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code="$?"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${builds}" == "1" ]] \
+    && grep -q '^build cistella/opencode-aiwb:local' "${r}/state/buildlog"; then
+    report ok "aiwb-lane-only-rebuilds-aiwb-alone"
+else
+    report fail "aiwb-lane-only-rebuilds-aiwb-alone" "exit=${code} builds=${builds}"
+fi
+
+# 60. channel movement fans out to all four OpenCode owners: a new
+#     upstream version lands the same tuple in every duplicate.
+r="$(new_case aiwb-channel-fanout-all-owners)"
+seed_images "${r}"
+current_versions_env "${r}"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    STUB_TMUX_V="3.4" STUB_GH_V="2.101.0" \
+    STUB_OC_V="9.99.0" STUB_CODEX_V="0.156.0" \
+    PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+got_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+got_pandoc="$( ( . "${r}/images/cistella/opencode-pandoc/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+got_litrpg="$( ( . "${r}/images/cistella/opencode-litrpg/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+got_aiwb="$( ( . "${r}/images/cistella/opencode-aiwb/pins.sh" && printf '%s' "${OPENCODE_VERSION}" ) )"
+sha_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+sha_aiwb="$( ( . "${r}/images/cistella/opencode-aiwb/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${got_oc}" == "9.99.0" && "${got_pandoc}" == "9.99.0" \
+    && "${got_litrpg}" == "9.99.0" && "${got_aiwb}" == "9.99.0" \
+    && "${sha_oc}" == "${sha_aiwb}" && "${builds}" == "4" ]] \
+    && ! grep -q '^build cistella/base:local' "${r}/state/buildlog"; then
+    report ok "aiwb-channel-fanout-all-four-owners"
+else
+    report fail "aiwb-channel-fanout-all-four-owners" "exit=${code} builds=${builds} aiwb=${got_aiwb}"
+fi
+
+# 61. divergent aiwb duplicate is drift, not clean: aiwb carries an
+#     old OPENCODE_VERSION while canonical and upstream agree.
+r="$(new_case aiwb-divergent-duplicate-check)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^OPENCODE_VERSION=.*|OPENCODE_VERSION=2.2.6|' "${r}/images/cistella/opencode-aiwb/pins.sh"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+if [[ "${code}" == "1" && "${before_pins}" == "${after_pins}" ]] \
+    && grep -q "repaired divergent duplicate" "${r}/stdout"; then
+    report ok "aiwb-divergent-duplicate-check-reports-drift"
+else
+    report fail "aiwb-divergent-duplicate-check-reports-drift" "exit=${code}"
+fi
+
+# 62. divergent aiwb duplicate checksum is repaired to converged
+#     with no rebuild: only the hand-edited duplicate was wrong.
+r="$(new_case aiwb-divergent-checksum-apply-repairs)"
+seed_images "${r}"
+current_versions_env "${r}"
+sed -i -E 's|^OPENCODE_SHA256_ARM64=.*|OPENCODE_SHA256_ARM64=0000000000000000000000000000000000000000000000000000000000000000|' "${r}/images/cistella/opencode-aiwb/pins.sh"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+got_oc="$( ( . "${r}/images/cistella/opencode/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+got_aiwb="$( ( . "${r}/images/cistella/opencode-aiwb/pins.sh" && printf '%s' "${OPENCODE_SHA256_ARM64}" ) )"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "0" && "${got_oc}" == "${got_aiwb}" && "${builds}" == "0" ]] \
+    && grep -q "repaired divergent duplicate" "${r}/stdout"; then
+    report ok "aiwb-divergent-checksum-apply-repairs"
+else
+    report fail "aiwb-divergent-checksum-apply-repairs" "exit=${code} builds=${builds}"
+fi
+
+# 63. write failure at the aiwb owner restores everything: with
+#     channel drift pending, a failed aiwb pin write exits 2 with all
+#     seven pin files byte-identical and no builds.
+r="$(new_case aiwb-write-fail-restores-all)"
+seed_images "${r}"
+current_versions_env "${r}"
+before_pins="$(pins_sha "${r}")"
+mkdir -p "${r}/sedstub"
+cat > "${r}/sedstub/sed" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+    case "${a}" in
+        *opencode-aiwb/pins.sh*) exit 77 ;;
+    esac
+done
+exec /usr/bin/sed "$@"
+STUB
+chmod +x "${r}/sedstub/sed"
+code="0"
+CURL_MODE=ok STUB_OC_VERSION="9.99.0" \
+    PATH="${r}/sedstub:${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${before_pins}" == "${after_pins}" && "${builds}" == "0" ]]; then
+    report ok "aiwb-write-fail-restores-all"
+else
+    report fail "aiwb-write-fail-restores-all" "exit=${code} builds=${builds}"
+fi
+
+# 64. absent aiwb tag is refused in both modes, not bootstrapped by
+#     refresh: with no :local tag, the explicit bootstrap guard fails
+#     operational-error before any pin write or build. Standalone build
+#     + validation first, then refresh manages the lane.
+r="$(new_case aiwb-absent-tag-refused)"
+seed_images "${r}"
+current_versions_env "${r}"
+grep -vE '^cistella/opencode-aiwb:local=' "${r}/state/ids" > "${r}/state/ids.tmp" || true
+mv "${r}/state/ids.tmp" "${r}/state/ids"
+before_pins="$(pins_sha "${r}")"
+code="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images check \
+    >"${r}/stdout" 2>"${r}/stderr" || code="$?"
+check_pins="$(pins_sha "${r}")"
+code2="0"
+CURL_MODE=ok PATH="${stubbin}:${PATH}" PC_SETUP_ROOT="${r}" XDG_RUNTIME_DIR="${r}" \
+    PODMAN_STATE="${r}/state" ./scripts/refresh-images --apply \
+    >"${r}/stdout2" 2>"${r}/stderr2" || code2="$?"
+after_pins="$(pins_sha "${r}")"
+builds="$(grep -c '^build ' "${r}/state/buildlog" || true)"
+if [[ "${code}" == "2" && "${check_pins}" == "${before_pins}" ]] \
+    && grep -q "does not exist; build it first" "${r}/stderr" \
+    && [[ "${code2}" == "2" && "${after_pins}" == "${before_pins}" && "${builds}" == "0" ]]; then
+    report ok "aiwb-absent-tag-refused"
+else
+    report fail "aiwb-absent-tag-refused" "exit=${code}/${code2} builds=${builds}"
 fi
 
 echo "---- ${pass} passed, ${fail} failed ----"

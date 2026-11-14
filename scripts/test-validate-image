@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Hermetic fixtures for the aiwb no-documents absence checks.
+
+Extracts the exact `sh -c` predicates between the
+BEGIN/END aiwb-absence-checks markers in scripts/validate-image and
+executes each against stub environments. The general podman-run stub
+never executes these predicates, so suite greenness alone is not this
+proof; these fixtures are. Installed status is the second status
+column, so held-installed `hi` counts as installed. Query failure is
+refusal, never absence. The predicate captures command output instead
+of using scratch files, so fixtures own no shared paths; stub
+directories are uniquely owned per scenario and removed afterwards.
+Scenarios: TeX installed but xelatex absent (must fail),
+held-installed TeX (must fail), clean control (must pass), forbidden
+binary present (must fail), dpkg query failure (must fail closed).
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VALIDATE = os.path.join(REPO, "scripts", "validate-image")
+
+pass_count = 0
+fail_count = 0
+
+
+def report(ok, name, detail=""):
+    global pass_count, fail_count
+    if ok:
+        pass_count += 1
+        print("PASS %s" % name)
+    else:
+        fail_count += 1
+        print("FAIL %s: %s" % (name, detail))
+
+
+def extract_predicates():
+    text = open(VALIDATE).read()
+    m = re.search(
+        r"# BEGIN aiwb-absence-checks\n(.*?)# END aiwb-absence-checks\n",
+        text,
+        re.S,
+    )
+    assert m, "absence-check markers missing in validate-image"
+    bodies = re.findall(r"sh -c '([^']*)'", m.group(1))
+    assert len(bodies) == 3, "expected 3 absence predicates, got %d" % len(bodies)
+    return bodies
+
+
+DPKG_TEX = """\
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+||/ Name           Version      Architecture Description
++++-==============-============-============-=================================
+ii  libc6          2.41-12      amd64        GNU C Library
+ii  texlive-base   2024.20250309-1 all       TeX Live: Essential programs
+ii  tex-common     6.18         all          common infrastructure
+ii  lmodern        2.005-1      all          scalable PostScript fonts
+"""
+
+DPKG_HELD = """\
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+||/ Name           Version      Architecture Description
++++-==============-============-============-=================================
+ii  libc6          2.41-12      amd64        GNU C Library
+hi  texlive-base   2024.20250309-1 all       TeX Live: Essential programs
+"""
+
+DPKG_REINST = """\
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+|/ Err=none/Reinst-required (Status,Err: uppercase=bad)
+||/ Name           Version      Architecture Description
++++-==============-============-============-=================================
+ii  libc6          2.41-12      amd64        GNU C Library
+iiR texlive-base   2024.20250309-1 all       TeX Live: Essential programs
+hiR tex-common     6.18         all          common infrastructure
+"""
+
+DPKG_CLEAN = """\
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+||/ Name           Version      Architecture Description
++++-==============-============-============-=================================
+ii  libc6          2.41-12      amd64        GNU C Library
+ii  libasound2t64  1.2.15.2-1   amd64        ALSA library
+"""
+
+
+def make_stubbin(mode, with_pandoc=False):
+    d = tempfile.mkdtemp(prefix="aiwb-abs-stub-")
+    # Hermetic PATH: only grep is linked from the host; pandoc/xelatex
+    # must resolve solely from stubs here, never from /usr/bin.
+    os.symlink("/usr/bin/grep", os.path.join(d, "grep"))
+    dpkg = "#!/bin/sh\n"
+    if mode == "fail":
+        dpkg += "exit 1\n"
+    elif mode == "tex":
+        dpkg += "printf '%s'\n" % DPKG_TEX.replace("'", "'\"'\"'")
+    elif mode == "held":
+        dpkg += "printf '%s'\n" % DPKG_HELD.replace("'", "'\"'\"'")
+    elif mode == "reinst":
+        dpkg += "printf '%s'\n" % DPKG_REINST.replace("'", "'\"'\"'")
+    else:
+        dpkg += "printf '%s'\n" % DPKG_CLEAN.replace("'", "'\"'\"'")
+    open(os.path.join(d, "dpkg"), "w").write(dpkg)
+    os.chmod(os.path.join(d, "dpkg"), 0o755)
+    if with_pandoc:
+        open(os.path.join(d, "pandoc"), "w").write("#!/bin/sh\necho pandoc\n")
+        os.chmod(os.path.join(d, "pandoc"), 0o755)
+    return d
+
+
+def run_group(predicates, stubbin):
+    env = dict(os.environ)
+    env["PATH"] = stubbin
+    results = []
+    for body in predicates:
+        p = subprocess.run(
+            ["/bin/sh", "-c", body],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        results.append(p.returncode)
+    return results
+
+
+def main():
+    predicates = extract_predicates()
+    stubbins = []
+    try:
+        # 1. TeX installed but xelatex absent: package check fails the group.
+        stubbins.append(make_stubbin("tex"))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [0, 0, 1], "aiwb-absence-tex-without-xelatex-fails",
+               "exits=%r" % (r,))
+
+        # 2. Held-installed TeX counts as installed: package check fails.
+        stubbins.append(make_stubbin("held"))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [0, 0, 1], "aiwb-absence-held-tex-fails",
+               "exits=%r" % (r,))
+
+        # 2b. Installed-with-error counts as installed: reinst-required
+        # TeX payload must fail, not read as absence.
+        stubbins.append(make_stubbin("reinst"))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [0, 0, 1], "aiwb-absence-reinst-tex-fails",
+               "exits=%r" % (r,))
+        stubbins.append(make_stubbin("clean"))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [0, 0, 0], "aiwb-absence-clean-passes",
+               "exits=%r" % (r,))
+
+        # 4. Forbidden binary present: command check fails the group.
+        stubbins.append(make_stubbin("clean", with_pandoc=True))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [1, 0, 0], "aiwb-absence-forbidden-binary-fails",
+               "exits=%r" % (r,))
+
+        # 5. dpkg query failure: fail closed, never counted as absence.
+        stubbins.append(make_stubbin("fail"))
+        r = run_group(predicates, stubbins[-1])
+        report(r == [0, 0, 1], "aiwb-absence-query-failure-fails-closed",
+               "exits=%r" % (r,))
+    finally:
+        for d in stubbins:
+            shutil.rmtree(d, ignore_errors=True)
+    print("---- %d passed, %d failed ----" % (pass_count, fail_count))
+    return 1 if fail_count else 0
+
+
+sys.exit(main())

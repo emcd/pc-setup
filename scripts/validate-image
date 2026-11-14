@@ -7,7 +7,7 @@ target="opencode"
 
 for arg in "$@"; do
     case "${arg}" in
-        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg) target="${arg}" ;;
+        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg|opencode-aiwb) target="${arg}" ;;
         *)
             echo "error: unknown argument ${arg}" >&2
             exit 1
@@ -175,6 +175,36 @@ case "${target}" in
             sh -c 'test "$(command -v comfy-mcp)" = "/usr/local/bin/comfy-mcp" && test "$(command -v comfy)" = "/usr/local/bin/comfy"'
         podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
             sh -c 'for t in shellcheck shfmt ss nc socat rsync unzip zstd gdb strace ltrace tree; do command -v "$t" >/dev/null || exit 1; done'
+        ;;
+    opencode-aiwb)
+        # Harness plus browser-runtime libraries; no documents payload.
+        # Installed status is the second status column, independent of
+        # desired selection (held-installed `hi` counts as installed);
+        # the third error column must also be accounted for
+        # (reinst-required `iiR`/`hiR` is still installed payload).
+        # Query failure is refusal, never absence; the package check
+        # captures command output instead of using scratch files.
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'test "$(command -v opencode)" = "/usr/local/bin/opencode"'
+        podman run --rm --userns=keep-id --env HOME=/tmp --env TERM=xterm-ghostty "${image_tag}" \
+            sh -c "opencode --version | grep --quiet '${OPENCODE_VERSION}'"
+        # BEGIN aiwb-absence-checks
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'command -v pandoc >/dev/null && exit 1 || exit 0'
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'command -v xelatex >/dev/null && exit 1 || exit 0'
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'pkgs="$(dpkg -l 2>/dev/null)" || exit 1; printf "%s\n" "$pkgs" | grep -Eq "^.i[ R] +(texlive|tex-common|lmodern)" && exit 1; test $? -eq 1'
+        # END aiwb-absence-checks
+        podman run --rm --userns=keep-id --env HOME=/ "${image_tag}" \
+            sh -c 'for p in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcups2t64 libdbus-1-3 libgbm1 libpango-1.0-0 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2; do dpkg -l "$p" 2>/dev/null | tail -1 | grep --quiet "^ii" || exit 1; done'
+        # Bounded browser-runtime capability proof: every declared
+        # library must actually load (plus a negative control proving
+        # the check is not vacuous). Load proof, not a browser launch.
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            python3 -c "import ctypes; [ctypes.CDLL(l) for l in ['libasound.so.2','libatk-bridge-2.0.so.0','libatk-1.0.so.0','libatspi.so.0','libcups.so.2','libdbus-1.so.3','libgbm.so.1','libpango-1.0.so.0','libXcomposite.so.1','libXdamage.so.1','libXfixes.so.3','libxkbcommon.so.0','libXrandr.so.2']]; print('browser-runtime-load-ok')"
+        podman run --rm --userns=keep-id --env HOME=/tmp "${image_tag}" \
+            sh -c 'python3 -c "import ctypes; ctypes.CDLL(\"libnope-not-real.so.0\")" 2>/dev/null && exit 1 || exit 0'
         ;;
 esac
 

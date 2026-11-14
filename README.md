@@ -12,12 +12,20 @@ Configuration and maintenance workspace for PC installations.
 - Rootless Podman prerequisite validation: `bash ./scripts/validate-rootless-podman`
 - Cistella profile mount sources: `bash ./scripts/provision-cistella-mount-sources`
 - Cistella profile backup and deploy: `bash ./scripts/deploy-cistella-profiles`
-- Cistella images: `bash ./scripts/build-image [base|opencode|codex|muse]` then
-  `bash ./scripts/validate-image [base|opencode|codex|muse]`. No argument builds the
+- Cistella images: `bash ./scripts/build-image [base|opencode|codex|muse|opencode-pandoc|opencode-litrpg|opencode-aiwb]` then
+  `bash ./scripts/validate-image [base|opencode|codex|muse|opencode-pandoc|opencode-litrpg|opencode-aiwb]`. No argument builds the
   shared base from cache, then the OpenCode image. `--no-cache` applies only
   to the named image. After a shared pin change, rebuild `base`, then each
   harness. Tags: `cistella/base:local`, `cistella/opencode:local`,
-  `cistella/codex:local`, `cistella/muse:local`.
+  `cistella/codex:local`, `cistella/muse:local`,
+  `cistella/opencode-pandoc:local`, `cistella/opencode-litrpg:local`,
+  `cistella/opencode-aiwb:local`. Composed finals build `FROM` base plus
+  declared source fragments: pandoc carries documents, litrpg adds
+  browser-runtime and comfy tools, aiwb carries browser-runtime libraries
+  for headless Chromium (playwright MCP) with no documents payload. A new
+  final needs a first standalone build plus validation before refresh
+  manages its lane; rollout is manual (seat recreation through the
+  coordinator).
 
 ## Image Refresh
 

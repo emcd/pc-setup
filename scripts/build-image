@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || { echo "error: --label needs KEY=VALUE" >&2; exit 1; }
             extra_labels+=(--label "$2"); shift 2 ;;
         --label=*) extra_labels+=(--label "${1#--label=}"); shift ;;
-        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg) target="$1"; shift ;;
+        base|opencode|codex|muse|opencode-pandoc|opencode-litrpg|opencode-aiwb) target="$1"; shift ;;
         --skip-parents) skip_parents=1; shift ;;
         *)
             echo "error: unknown argument $1" >&2
