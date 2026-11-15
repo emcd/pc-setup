@@ -7,7 +7,7 @@ id = 'strategist'
 project-name = 'conlang'
 name = 'Strategist'
 directory = '/home/me/src/conlang'
-coder = 'opencode'
+coder = 'opencode--conlang'
 coder-session-id = 'ses_11264160affe1trCKWcHg4fXZC'
 
 [[sessions]]
@@ -15,7 +15,7 @@ id = 'phonologist'
 project-name = 'conlang'
 name = 'Phonologist'
 directory = '/home/me/src/CLONES/conlang/phonology'
-coder = 'opencode'
+coder = 'opencode--conlang'
 coder-session-id = 'ses_1122d0afbffe55WwepurkFHjZ2'
 
 [[sessions]]
@@ -23,7 +23,7 @@ id = 'syntactician'
 project-name = 'conlang'
 name = 'Syntactician'
 directory = '/home/me/src/CLONES/conlang/syntax'
-coder = 'opencode'
+coder = 'opencode--conlang'
 coder-session-id = 'ses_1122ac7f0ffeXdUHEsH7bcPnUk'
 
 [[sessions]]
@@ -31,5 +31,5 @@ id = 'semantician'
 project-name = 'conlang'
 name = 'Semantician'
 directory = '/home/me/src/CLONES/conlang/semantics'
-coder = 'opencode'
+coder = 'opencode--conlang'
 coder-session-id = 'ses_1122a3562ffe3FGgba5cn6tGWA'
