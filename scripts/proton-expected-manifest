@@ -1,0 +1,9 @@
+# Expected Proton payload identity for harness fresh deploys.
+#
+# A fresh deploy publishes the staged tree only when it matches this
+# snapshot exactly (digest plus source version). Update deliberately
+# with re-validation after confirming a new payload works; never
+# automatically. This is the reviewed build, not a floating track.
+TREE_DIGEST=35cc72c920a4b3bd5d53577ec6336e510bebfc0321a1b58d2d6abf645ca6b61a
+PROTON_VERSION=1791559474 proton-11.0-2e-x86_64
+SNAP_REVISION=1.0.0.85 (rev 245)

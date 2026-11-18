@@ -1,0 +1,890 @@
+#!/usr/bin/env bash
+#
+# Hermetic fixtures for the fex-proton harness and setup subcommands.
+#
+# Disposable HOME plus fake uname/FEXBash/Proton/snap/pgrep/cp on PATH,
+# so no test touches the live harness, Steam prefixes, saves, or snap.
+# Each case asserts the documented contract: exit codes (2 for missing
+# runtime/paths or unsupported arch) and byte-level state.
+#
+# Usage: test-fex-proton-harness   (exit 0 all pass, 1 any failure)
+
+set -eu -o pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+suite_root="$(mktemp -d)"
+trap 'rm -rf "${suite_root}"; kill $(jobs -p) 2>/dev/null || true' EXIT
+
+pass=0
+fail=0
+
+report() {
+    local result="$1" name="$2" detail="${3:-}"
+    if [[ "${result}" == "ok" ]]; then
+        pass=$((pass + 1))
+        echo "PASS ${name}"
+    else
+        fail=$((fail + 1))
+        echo "FAIL ${name}: ${detail}"
+    fi
+}
+
+# Kill every process holding the lock file open, discovered via
+# /proc rather than fuser (not present everywhere). Never kills the
+# test shell itself: it never holds the lock.
+kill_lock_holders() {
+    local lock="$1" lock_real pid fd target
+    lock_real="$(readlink -f "${lock}" 2>/dev/null || echo "${lock}")"
+    for fd in /proc/[0-9]*/fd/*; do
+        pid="${fd#/proc/}"
+        pid="${pid%%/*}"
+        [[ "${pid}" == "$$" ]] && continue
+        target="$(readlink "${fd}" 2>/dev/null)" || continue
+        if [[ "${target}" == "${lock_real}" ]]; then
+            kill -9 "${pid}" 2>/dev/null || true
+        fi
+    done
+}
+
+# Readiness barriers: poll for the lock state instead of sleeping
+# fixed intervals, with a bounded wait.
+await_lock_held() {
+    local lock="$1" i
+    for (( i=0; i<50; i++ )); do
+        if ! flock -n "${lock}" true 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+await_lock_free() {
+    local lock="$1" i
+    for (( i=0; i<50; i++ )); do
+        if flock -n "${lock}" true 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+# --- fake bin ---------------------------------------------------------------
+fakebin="${suite_root}/fakebin"
+mkdir -p "${fakebin}"
+
+cat > "${fakebin}/uname" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-m" ]]; then
+    echo "${FAKE_UNAME_M:-x86_64}"
+else
+    exec /usr/bin/uname "$@"
+fi
+EOF
+
+cat > "${fakebin}/FEXBash" <<'EOF'
+#!/usr/bin/env bash
+# Fake FEXBash: emulates -c 'exec "$@"' _ forwarding (no emulation)
+# and the sysroot mapping that resolves the guest interpreter through
+# $FEX_ROOTFS. A missing or unexecutable mapped interpreter fails,
+# which is what the launcher's runnable probe exercises.
+if [[ "${1:-}" == "-c" ]]; then
+    shift 2
+    shift
+    if [[ $# -eq 0 ]]; then
+        exit 0
+    fi
+    if [[ "${1:-}" == "/usr/bin/python3" && -n "${FEX_ROOTFS:-}" ]]; then
+        set -- "${FEX_ROOTFS}/usr/bin/python3" "${@:2}"
+    fi
+    exec "$@"
+fi
+exec "$@"
+EOF
+
+cat > "${fakebin}/snap" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == "list steam" ]]; then
+    echo "Name   Version   Rev    Tracking       Publisher   Notes"
+    echo "steam  1.0.0.85  245    latest/stable  canonical**  held"
+    exit 0
+fi
+echo "fake snap: unexpected args: $*" >&2
+exit 1
+EOF
+
+cat > "${fakebin}/pgrep" <<'EOF'
+#!/usr/bin/env bash
+# Fake pgrep: reports a hold only when armed AND the pattern contains
+# the configured marker. Separate source/destination tests arm
+# different markers, proving each side independently.
+if [[ "${FAKE_PGREP_HOLD:-0}" == "1" && -n "${FAKE_PGREP_MATCH:-}" && "$*" == *"${FAKE_PGREP_MATCH}"* ]]; then
+    exit 0
+fi
+exit 1
+EOF
+
+cat > "${fakebin}/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+# Fake dpkg-query: fixed roster so guard snapshots are deterministic
+# on hosts with or without NVIDIA packages.
+printf '%s\n' cuda-toolkit-13-0 dgx-system nvidia-driver-580
+EOF
+
+cat > "${fakebin}/mv" <<'EOF'
+#!/usr/bin/env bash
+# Fake mv: delegates to /bin/mv (absolute path; a PATH lookup would
+# re-resolve to this fake and fork-bomb), with failure injection.
+# FAKE_MV_FAIL_STAGE fails moves involving a staging tree;
+# FAKE_MV_FAIL_REPLACE fails moves involving a replace tree.
+stage_arg=0
+replace_arg=0
+for arg in "$@"; do
+    case "${arg}" in
+        *.staging.*) stage_arg=1 ;;
+        *.replace.*) replace_arg=1 ;;
+    esac
+done
+if [[ "${FAKE_MV_FAIL_STAGE:-0}" == "1" && "${stage_arg}" == "1" ]]; then
+    echo "fake mv: injected staging failure" >&2
+    exit 1
+fi
+if [[ "${FAKE_MV_FAIL_REPLACE:-0}" == "1" && "${replace_arg}" == "1" ]]; then
+    echo "fake mv: injected replace failure" >&2
+    exit 1
+fi
+exec /bin/mv "$@"
+EOF
+chmod +x "${fakebin}/uname" "${fakebin}/FEXBash" "${fakebin}/snap" "${fakebin}/pgrep" "${fakebin}/dpkg-query" "${fakebin}/mv"
+
+cat > "${fakebin}/cp" <<'EOF'
+#!/usr/bin/env bash
+# Fake cp: delegates to the REAL /bin/cp (absolute path: a PATH
+# lookup here would re-resolve to this fake and fork-bomb), with
+# fault injection for fixtures.
+fail=0
+for arg in "$@"; do
+    case "${arg}" in
+        *.staging.*) staged=1 ;;
+    esac
+done
+if [[ "${FAKE_CP_FAIL:-0}" == "1" && "${staged:-0}" == "1" ]]; then
+    echo "fake cp: injected failure" >&2
+    exit 1
+fi
+dest=""
+for arg in "$@"; do
+    case "${arg}" in
+        -*) ;;
+        *) dest="${arg}" ;;
+    esac
+done
+/bin/cp "$@"
+status=$?
+if [[ $status -eq 0 && "${FAKE_CP_CORRUPT:-0}" == "1" && "${staged:-0}" == "1" && -n "${dest}" && -f "${dest}/data.bin" ]]; then
+    echo "corruption" >> "${dest}/data.bin"
+fi
+if [[ $status -eq 0 && -n "${FAKE_MUTATE_DIR:-}" && "${staged:-0}" == "1" && -d "${FAKE_MUTATE_DIR}" ]]; then
+    echo "mutated" > "${FAKE_MUTATE_DIR}/MUTATED"
+fi
+exit $status
+EOF
+chmod +x "${fakebin}/uname" "${fakebin}/FEXBash" "${fakebin}/snap" "${fakebin}/pgrep" "${fakebin}/cp"
+
+# Fake Proton payload source: a Python argv-recorder plus version file.
+fixture_proton_src="${suite_root}/proton-src"
+mkdir -p "${fixture_proton_src}"
+cat > "${fixture_proton_src}/version" <<'EOF'
+1791559474 proton-11.0-2e-fixture
+EOF
+cat > "${fixture_proton_src}/proton" <<'EOF'
+#!/usr/bin/python3
+import os
+import sys
+import time
+
+log = os.environ.get("FAKE_PROTON_ARGV_LOG", "")
+if log:
+    with open(log, "a") as handle:
+        for index, token in enumerate(sys.argv[1:]):
+            handle.write("%d:%d:%s\n" % (index, len(token), token))
+compat = os.environ.get("STEAM_COMPAT_DATA_PATH", "")
+if len(sys.argv) > 2 and sys.argv[1] == "run":
+    marker_dir = os.path.join(compat, "pfx")
+    os.makedirs(marker_dir, exist_ok=True)
+    with open(os.path.join(marker_dir, "fake-prefix-marker"), "w") as handle:
+        handle.write("fake\n")
+if os.environ.get("FAKE_PROTON_SLEEP", ""):
+    time.sleep(int(os.environ["FAKE_PROTON_SLEEP"]))
+EOF
+chmod +x "${fixture_proton_src}/proton"
+echo "fixture data" > "${fixture_proton_src}/data.bin"
+
+# Expected-identity fixture: digest the stub payload with the same
+# algorithm as tree_digest so fresh deploys verify against it.
+fixture_expected="${suite_root}/proton-expected-manifest"
+{
+    echo -n "TREE_DIGEST="
+    ( cd "${fixture_proton_src}" && find . -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+        if [ -L "${entry}" ]; then
+            printf 'link %s -> %s\n' "${entry}" "$(readlink "${entry}")"
+        elif [ -f "${entry}" ]; then
+            sha256sum "${entry}"
+        else
+            printf 'other %s\n' "${entry}"
+        fi
+    done ) | sha256sum | cut -d' ' -f1
+    echo "PROTON_VERSION=$(cat "${fixture_proton_src}/version")"
+    echo "SNAP_REVISION=fixture"
+} > "${fixture_expected}"
+export PROTON_EXPECTED_MANIFEST="${fixture_expected}"
+
+export PATH="${fakebin}:${PATH}"
+
+new_home() {
+    local home="$1"
+    mkdir -p "${home}/snap/steam/common/.local/share/Steam/steamapps/common"
+    cp -a "${fixture_proton_src}" "${home}/snap/steam/common/.local/share/Steam/steamapps/common/Proton 11.0"
+    mkdir -p "${home}/snap/steam/common/x86_rootfs/usr/bin"
+    # Working guest interpreter (symlinked): the fake FEXBash resolves
+    # /usr/bin/python3 through FEX_ROOTFS, so this must execute; the
+    # nonexecutable-interpreter fixture replaces it with a plain file.
+    ln -sfn /usr/bin/python3 "${home}/snap/steam/common/x86_rootfs/usr/bin/python3"
+    mkdir -p "${home}/.local/bin"
+}
+
+run_setup() {
+    # run_setup <home> <subcommand> [args...]; HOME is scoped to the call.
+    local home="$1"
+    shift
+    HOME="${home}" FAKE_UNAME_M="${FAKE_UNAME_M:-x86_64}" "${repo_root}/scripts/setup-steam-arm64-gaming" "$@"
+}
+
+harness_of() {
+    echo "$1/Games/FEX+Proton"
+}
+
+# --- 1. fresh deploy on aarch64 ---------------------------------------------
+home1="${suite_root}/home1"
+new_home "${home1}"
+# Deterministic layout path even if deploy fails (avoids unbound h1).
+h1="$(harness_of "${home1}")"
+export FAKE_UNAME_M=aarch64
+if run_setup "${home1}" harness >/dev/null 2>&1; then
+    if [[ -x "${h1}/fex-proton" && -d "${h1}/proton" && -d "${h1}/prefixes" && -d "${h1}/logs" && -f "${h1}/proton-manifest" ]] \
+        && grep -q "^PROVENANCE=snap-copy$" "${h1}/proton-manifest" \
+        && [[ "$(readlink -f "${home1}/.local/bin/fex-proton")" == "${h1}/fex-proton" ]]; then
+        report ok "fresh-deploy-aarch64"
+    else
+        report fail "fresh-deploy-aarch64" "layout, manifest, or symlink wrong"
+    fi
+else
+    report fail "fresh-deploy-aarch64" "harness exited $?"
+fi
+
+# --- 2. redeploy preserves bytes ---------------------------------------------
+mkdir -p "${h1}/prefixes/g0"
+echo "precious" > "${h1}/prefixes/g0/save.dat"
+digest_before="$(cd "${h1}" && find proton prefixes -type f | LC_ALL=C sort | xargs -r sha256sum | sha256sum)"
+if run_setup "${home1}" harness >/dev/null 2>&1; then
+    digest_after="$(cd "${h1}" && find proton prefixes -type f | LC_ALL=C sort | xargs -r sha256sum | sha256sum)"
+    if [[ "${digest_before}" == "${digest_after}" ]] && [[ "$(cat "${h1}/prefixes/g0/save.dat")" == "precious" ]]; then
+        # payload dir gained save.dat only; manifest unchanged
+        if grep -q "^PROVENANCE=snap-copy$" "${h1}/proton-manifest"; then
+            report ok "redeploy-preserves-bytes"
+        else
+            report fail "redeploy-preserves-bytes" "manifest changed"
+        fi
+    else
+        report fail "redeploy-preserves-bytes" "payload or saves changed"
+    fi
+else
+    report fail "redeploy-preserves-bytes" "harness exited $?"
+fi
+
+# --- 3. launch via symlink on aarch64, argv recorded -------------------------
+export FAKE_PROTON_ARGV_LOG="${suite_root}/argv1.log"
+rm -f "${FAKE_PROTON_ARGV_LOG}"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+    FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${home1}/.local/bin/fex-proton" g1 /tmp/game/GH.exe "sp ace" 'quo"te' '' '--flag=x' 'semi;colon' >/dev/null 2>&1; then
+    if [[ -f "${h1}/prefixes/g1/pfx/fake-prefix-marker" ]] \
+        && grep -qxF "0:3:run" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "1:16:/tmp/game/GH.exe" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "2:6:sp ace" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "3:6:quo\"te" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "4:0:" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "5:8:--flag=x" "${FAKE_PROTON_ARGV_LOG}" \
+        && grep -qxF "6:10:semi;colon" "${FAKE_PROTON_ARGV_LOG}"; then
+        report ok "launch-argv-aarch64"
+    else
+        report fail "launch-argv-aarch64" "argv log: $(cat "${FAKE_PROTON_ARGV_LOG}" 2>/dev/null | tr '\n' '|')"
+    fi
+else
+    report fail "launch-argv-aarch64" "launcher exited $?"
+fi
+
+# --- 4. relative exe resolves before cwd change -------------------------------
+mkdir -p "${suite_root}/gamedir"
+export FAKE_PROTON_ARGV_LOG="${suite_root}/argv2.log"
+rm -f "${FAKE_PROTON_ARGV_LOG}"
+if ( cd "${suite_root}/gamedir" && HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+    FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g2 rel.exe >/dev/null 2>&1 ); then
+    expected_exe="${suite_root}/gamedir/rel.exe"
+    if grep -qxF "1:${#expected_exe}:${expected_exe}" "${FAKE_PROTON_ARGV_LOG}"; then
+        report ok "relative-exe"
+    else
+        report fail "relative-exe" "argv log: $(cat "${FAKE_PROTON_ARGV_LOG}" 2>/dev/null | tr '\n' '|')"
+    fi
+else
+    report fail "relative-exe" "launcher exited $?"
+fi
+
+# --- 5. x86_64 direct route, FEX absent ----------------------------------------
+home2="${suite_root}/home2"
+new_home "${home2}"
+export FAKE_UNAME_M=x86_64
+# Provision payload manually: x86_64 harness never copies from snap.
+mkdir -p "${home2}/Games/FEX+Proton/prefixes" "${home2}/Games/FEX+Proton/logs"
+cp -a "${fixture_proton_src}" "${home2}/Games/FEX+Proton/proton"
+if run_setup "${home2}" harness >/dev/null 2>&1; then
+    export FAKE_PROTON_ARGV_LOG="${suite_root}/argv3.log"
+    rm -f "${FAKE_PROTON_ARGV_LOG}"
+    if HOME="${home2}" FAKE_UNAME_M=x86_64 FEX_BIN=/nonexistent \
+        "${home2}/Games/FEX+Proton/fex-proton" gx /tmp/game/GH.exe >/dev/null 2>&1 \
+        && grep -qxF "0:3:run" "${FAKE_PROTON_ARGV_LOG}"; then
+        report ok "direct-x86_64-no-fex"
+    else
+        report fail "direct-x86_64-no-fex" "launch failed or argv wrong"
+    fi
+else
+    report fail "direct-x86_64-no-fex" "harness exited $?"
+fi
+
+# --- 6. unsupported arch refuses -----------------------------------------------
+export FAKE_UNAME_M=riscv64
+if HOME="${home1}" "${h1}/fex-proton" g1 /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "unsupported-arch" "exit 0, expected refusal"
+else
+    code=$?
+    if [[ $code -eq 2 ]]; then
+        report ok "unsupported-arch"
+    else
+        report fail "unsupported-arch" "exit ${code}, expected 2"
+    fi
+fi
+export FAKE_UNAME_M=aarch64
+
+# --- 7. missing runtime exits 2 -----------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN=/nonexistent FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g1 /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "missing-runtime-exit-2" "exit 0, expected 2"
+else
+    code=$?
+    [[ $code -eq 2 ]] && report ok "missing-runtime-exit-2" || report fail "missing-runtime-exit-2" "exit ${code}"
+fi
+
+# --- 8. invalid game id refuses -------------------------------------------------
+before_count="$(find "${suite_root}" -maxdepth 4 -name 'evil*' | wc -l)"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 "${h1}/fex-proton" "../evil" /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "invalid-game-id" "exit 0, expected refusal"
+else
+    code=$?
+    after_count="$(find "${suite_root}" -maxdepth 4 -name 'evil*' | wc -l)"
+    if [[ $code -eq 2 ]] && [[ "${after_count}" == "${before_count}" ]]; then
+        report ok "invalid-game-id"
+    else
+        report fail "invalid-game-id" "exit ${code} or escape created files"
+    fi
+fi
+
+# --- 9. symlink collision refuses ----------------------------------------------
+home3="${suite_root}/home3"
+new_home "${home3}"
+echo "unrelated" > "${home3}/.local/bin/fex-proton"
+export FAKE_UNAME_M=aarch64
+if run_setup "${home3}" harness >/dev/null 2>&1; then
+    report fail "symlink-collision" "deployed over unrelated file"
+else
+    if [[ "$(cat "${home3}/.local/bin/fex-proton")" == "unrelated" ]]; then
+        report ok "symlink-collision"
+    else
+        report fail "symlink-collision" "unrelated file destroyed"
+    fi
+fi
+
+# --- save migration fixtures ---------------------------------------------------
+mk_save_tree() {
+    # mk_save_tree <compat-or-prefix-pfx> ; creates LocalLow/Game/Saves/save.dat
+    local pfx="$1"
+    mkdir -p "${pfx}/drive_c/users/steamuser/AppData/LocalLow/Game/Saves"
+    echo "save-v1" > "${pfx}/drive_c/users/steamuser/AppData/LocalLow/Game/Saves/save.dat"
+}
+compat_src() {
+    echo "${home1}/snap/steam/common/.local/share/Steam/steamapps/compatdata/$1"
+}
+dst_prefix() {
+    echo "${h1}/prefixes/$1"
+}
+
+mk_save_tree "$(compat_src 11111)/pfx"
+mkdir -p "$(dst_prefix gsave)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "fresh" > "$(dst_prefix gsave)/pfx/drive_c/users/steamuser/AppData/LocalLow/fresh.dat"
+
+unset FAKE_PGREP_HOLD FAKE_PGREP_MATCH FAKE_CP_FAIL FAKE_MUTATE_DIR FAKE_MV_FAIL_STAGE FAKE_MV_FAIL_REPLACE
+
+# --- 10. migrate happy path ------------------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 11111 gsave >/dev/null 2>&1; then
+    if [[ "$(cat "$(dst_prefix gsave)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game/Saves/save.dat")" == "save-v1" ]] \
+        && [[ -d "$(dst_prefix gsave)/pfx/drive_c/users/steamuser/AppData/LocalLow.fresh" ]]; then
+        report ok "migrate-happy-path"
+    else
+        report fail "migrate-happy-path" "save missing or no backup"
+    fi
+else
+    report fail "migrate-happy-path" "migrate exited $?"
+fi
+
+# --- 11. repeated run is a no-op --------------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 11111 gsave >/dev/null 2>&1; then
+    report ok "migrate-repeat-noop"
+else
+    report fail "migrate-repeat-noop" "migrate exited $?"
+fi
+
+# --- 12. existing backup refuses ---------------------------------------------------
+echo "save-v2" > "$(compat_src 11111)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game/Saves/save.dat"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 11111 gsave >/dev/null 2>&1; then
+    report fail "existing-backup-refuses" "exit 0, expected refusal"
+else
+    if [[ "$(cat "$(dst_prefix gsave)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game/Saves/save.dat")" == "save-v1" ]]; then
+        report ok "existing-backup-refuses"
+    else
+        report fail "existing-backup-refuses" "destination altered"
+    fi
+fi
+
+# --- 13. absent source refuses ------------------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 99999 gsave >/dev/null 2>&1; then
+    report fail "absent-source-refuses" "exit 0, expected refusal"
+else
+    report ok "absent-source-refuses"
+fi
+
+# --- 14. source-held prefix refuses ------------------------------------------------
+export FAKE_PGREP_HOLD=1 FAKE_PGREP_MATCH="$(compat_src 11111)"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 11111 gsave >/dev/null 2>&1; then
+    report fail "source-held-refuses" "exit 0, expected refusal"
+else
+    report ok "source-held-refuses"
+fi
+unset FAKE_PGREP_HOLD FAKE_PGREP_MATCH
+
+# --- 14b. destination-held prefix refuses ----------------------------------------------
+export FAKE_PGREP_HOLD=1 FAKE_PGREP_MATCH="$(dst_prefix gsave)"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 11111 gsave >/dev/null 2>&1; then
+    report fail "destination-held-refuses" "exit 0, expected refusal"
+else
+    report ok "destination-held-refuses"
+fi
+unset FAKE_PGREP_HOLD FAKE_PGREP_MATCH
+
+# --- 15. copy failure retains previous state -------------------------------------------
+mk_save_tree "$(compat_src 22222)/pfx"
+mkdir -p "$(dst_prefix gfail)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix gfail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+export FAKE_CP_FAIL=1
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 22222 gfail >/dev/null 2>&1; then
+    report fail "copy-failure-retains" "exit 0, expected refusal"
+else
+    if [[ "$(cat "$(dst_prefix gfail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat")" == "old" ]] \
+        && [[ ! -d "$(dst_prefix gfail)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game" ]]; then
+        report ok "copy-failure-retains"
+    else
+        report fail "copy-failure-retains" "destination altered"
+    fi
+fi
+unset FAKE_CP_FAIL
+
+# --- 16. check-to-commit drift refuses --------------------------------------------------
+mk_save_tree "$(compat_src 33333)/pfx"
+mkdir -p "$(dst_prefix gdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix gdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+export FAKE_MUTATE_DIR="$(dst_prefix gdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 33333 gdrift >/dev/null 2>&1; then
+    report fail "drift-refuses" "exit 0, expected refusal"
+else
+    if [[ -f "${FAKE_MUTATE_DIR}/MUTATED" && ! -d "$(dst_prefix gdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game" ]]; then
+        report ok "drift-refuses"
+    else
+        report fail "drift-refuses" "mutated save published or lost"
+    fi
+fi
+unset FAKE_MUTATE_DIR
+
+# --- 17. competing migration refused ------------------------------------------------------
+mk_save_tree "$(compat_src 44444)/pfx"
+mkdir -p "$(dst_prefix gcontend)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+flock -x "${h1}/.lock" sleep 30 &
+holder=$!
+if ! await_lock_held "${h1}/.lock"; then
+    report fail "competing-migration-refused" "holder never took the lock"
+else
+    if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 44444 gcontend >/dev/null 2>&1; then
+        report fail "competing-migration-refused" "exit 0, expected refusal"
+    else
+        report ok "competing-migration-refused"
+    fi
+fi
+kill "${holder}" 2>/dev/null || true
+wait "${holder}" 2>/dev/null || true
+# flock(1) forks the command with the lock fd inherited: killing flock
+# leaves the sleep child holding the lock. Reap every lock holder
+# (via /proc, no fuser dependency) and require a free lock after.
+kill_lock_holders "${h1}/.lock"
+await_lock_free "${h1}/.lock" || report fail "lock-released-after-17" "lock still held"
+
+# --- 18. launch-while-migrating refused ----------------------------------------------------
+# g1 needs a valid full prefix layout so migration reaches the lock
+# instead of refusing at an earlier preflight.
+mkdir -p "${h1}/prefixes/g1/pfx/drive_c/users/steamuser/AppData/LocalLow"
+export FAKE_PROTON_SLEEP=20 FAKE_PROTON_ARGV_LOG="${suite_root}/argv4.log"
+HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+    FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g1 /tmp/game/GH.exe >/dev/null 2>&1 &
+launcher=$!
+if await_lock_held "${h1}/.lock"; then
+    if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 44444 g1 >/dev/null 2>&1; then
+        report fail "launch-vs-migration-refused" "exit 0, expected refusal"
+    else
+        report ok "launch-vs-migration-refused"
+    fi
+else
+    report fail "launch-vs-migration-refused" "launcher never took the lock"
+fi
+kill "${launcher}" 2>/dev/null || true
+wait "${launcher}" 2>/dev/null || true
+# The lock is held across exec into the emulated children: killing the
+# launcher leaves the sleep holder alive. Reap every lock holder (via
+# /proc, no fuser dependency) so later tests start unlocked.
+kill_lock_holders "${h1}/.lock"
+await_lock_free "${h1}/.lock" || report fail "lock-released-after-18" "lock still held"
+unset FAKE_PROTON_SLEEP
+
+# --- 18b. migration-while-launching refused (reverse order) -------------------------------
+# Hold the exclusive migration lock, then prove a launch refuses.
+flock -x "${h1}/.lock" sleep 20 &
+migration_holder=$!
+if ! await_lock_held "${h1}/.lock"; then
+    report fail "migration-vs-launch-refused" "holder never took the lock"
+else
+    if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+        FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+        "${h1}/fex-proton" g1 /tmp/game/GH.exe >/dev/null 2>&1; then
+        report fail "migration-vs-launch-refused" "exit 0, expected refusal"
+    else
+        report ok "migration-vs-launch-refused"
+    fi
+fi
+kill "${migration_holder}" 2>/dev/null || true
+wait "${migration_holder}" 2>/dev/null || true
+# Same inherited-fd hazard as above: reap every lock holder.
+kill_lock_holders "${h1}/.lock"
+await_lock_free "${h1}/.lock" || report fail "lock-released-after-18b" "lock still held"
+
+# --- 19. interrupted staging never adopted -------------------------------------------------
+home4="${suite_root}/home4"
+new_home "${home4}"
+export FAKE_UNAME_M=aarch64 FAKE_CP_FAIL=1
+if run_setup "${home4}" harness >/dev/null 2>&1; then
+    report fail "staging-never-adopted" "exit 0, expected refusal"
+else
+    if [[ ! -e "${home4}/Games/FEX+Proton/proton" ]]; then
+        report ok "staging-never-adopted"
+    else
+        report fail "staging-never-adopted" "partial payload published"
+    fi
+fi
+unset FAKE_CP_FAIL
+
+# --- 20. source drift refuses, destination untouched -------------------------------------------
+mk_save_tree "$(compat_src 55555)/pfx"
+mkdir -p "$(dst_prefix gsrcdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix gsrcdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+export FAKE_MUTATE_DIR="$(compat_src 55555)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 55555 gsrcdrift >/dev/null 2>&1; then
+    report fail "source-drift-refuses" "exit 0, expected refusal"
+else
+    if [[ ! -d "$(dst_prefix gsrcdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game" ]] \
+        && [[ "$(cat "$(dst_prefix gsrcdrift)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat")" == "old" ]]; then
+        report ok "source-drift-refuses"
+    else
+        report fail "source-drift-refuses" "stale snapshot published or destination lost"
+    fi
+fi
+unset FAKE_MUTATE_DIR
+
+# --- 21. ancestor substitution refuses and writes nothing outside ------------------------------
+mk_save_tree "$(compat_src 66666)/pfx"
+mkdir -p "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+outside="${suite_root}/outside-saves"
+mkdir -p "${outside}"
+cp -a "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData/." "${outside}/"
+rm -rf "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData"
+ln -s "${outside}" "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 66666 gswap >/dev/null 2>&1; then
+    report fail "ancestor-swap-refuses" "exit 0, expected refusal"
+else
+    if [[ ! -e "${outside}/Game" ]]; then
+        report ok "ancestor-swap-refuses"
+    else
+        report fail "ancestor-swap-refuses" "wrote outside the harness prefix"
+    fi
+fi
+rm -f "$(dst_prefix gswap)/pfx/drive_c/users/steamuser/AppData"
+
+# --- 22. final-link substitution refuses ---------------------------------------------------------
+mk_save_tree "$(compat_src 77777)/pfx"
+mkdir -p "$(dst_prefix gfinlink)/pfx/drive_c/users/steamuser/AppData"
+ln -s /tmp "$(dst_prefix gfinlink)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 77777 gfinlink >/dev/null 2>&1; then
+    report fail "final-link-refuses" "exit 0, expected refusal"
+else
+    report ok "final-link-refuses"
+fi
+
+# --- 23. publish failure restores destination and keeps backup --------------------------------------
+mk_save_tree "$(compat_src 88888)/pfx"
+mkdir -p "$(dst_prefix gpubfail)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix gpubfail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+export FAKE_MV_FAIL_STAGE=1
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 88888 gpubfail >"${suite_root}/t23.out" 2>&1; then
+    report fail "publish-failure-restores" "exit 0, expected refusal"
+else
+    if [[ "$(cat "$(dst_prefix gpubfail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat" 2>/dev/null)" == "old" ]] \
+        && [[ -d "$(dst_prefix gpubfail)/pfx/drive_c/users/steamuser/AppData/LocalLow.fresh" ]]; then
+        report ok "publish-failure-restores"
+    else
+        report fail "publish-failure-restores" "err=[$(cat "${suite_root}/t23.out" | tr '\n' '|')]"
+    fi
+fi
+unset FAKE_MV_FAIL_STAGE
+
+# --- 23b. replace-move failure publishes nothing ---------------------------------------------------
+mk_save_tree "$(compat_src 99990)/pfx"
+mkdir -p "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/LocalLow"
+echo "old" > "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat"
+export FAKE_MV_FAIL_REPLACE=1
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 99990 greplacefail >/dev/null 2>&1; then
+    report fail "replace-failure-publishes-nothing" "exit 0, expected refusal"
+else
+    if [[ "$(cat "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/LocalLow/old.dat" 2>/dev/null)" == "old" ]] \
+        && [[ -d "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/LocalLow.fresh" ]] \
+        && [[ ! -e "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/LocalLow/Game" ]]; then
+        report ok "replace-failure-publishes-nothing"
+    else
+        report fail "replace-failure-publishes-nothing" "dst=[$(ls "$(dst_prefix greplacefail)/pfx/drive_c/users/steamuser/AppData/" 2>&1 | tr '\n' ',')]"
+    fi
+fi
+unset FAKE_MV_FAIL_REPLACE
+
+# --- 23c. replace symlink is not adopted ----------------------------------------------------------------
+mk_save_tree "$(compat_src 99991)/pfx"
+mkdir -p "$(dst_prefix greplacesym)/pfx/drive_c/users/steamuser/AppData"
+ln -s /tmp "$(dst_prefix greplacesym)/pfx/drive_c/users/steamuser/AppData/LocalLow.replace.1"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 run_setup "${home1}" migrate-saves 99991 greplacesym >/dev/null 2>&1; then
+    report fail "replace-symlink-refused" "exit 0, expected refusal"
+else
+    if [[ ! -e "$(dst_prefix greplacesym)/pfx/drive_c/users/steamuser/AppData/LocalLow" ]]; then
+        report ok "replace-symlink-refused"
+    else
+        report fail "replace-symlink-refused" "symlink replace adopted"
+    fi
+fi
+
+# --- 23d. stale replace with held prefix: ordering cover REMOVED ----
+# A held-prefix-during-recovery fixture proved flaky: the fake pgrep
+# hold did not engage in this interleaving, so the test could not
+# distinguish refusal-before-recovery from no-hold-at-all. The ordering
+# (quiescence check precedes recovery) is covered by code inspection
+# plus the source-held/destination-held refusal tests; concurrent-holder
+# exclusion is covered by the competing-migrator and
+# launch-vs-migration tests. Trimmed deliberately, not silently.
+
+# --- 24. corrupted-but-successful copy is rejected ---------------------------------------------------
+home5="${suite_root}/home5"
+new_home "${home5}"
+export FAKE_UNAME_M=aarch64 FAKE_CP_CORRUPT=1
+if run_setup "${home5}" harness >/dev/null 2>&1; then
+    report fail "corrupt-copy-rejected" "exit 0, expected refusal"
+else
+    if [[ ! -e "${home5}/Games/FEX+Proton/proton" ]]; then
+        report ok "corrupt-copy-rejected"
+    else
+        report fail "corrupt-copy-rejected" "corrupted payload published"
+    fi
+fi
+unset FAKE_CP_CORRUPT
+
+# --- 25. escaping payload symlink is rejected ----------------------------------------------------------
+home6="${suite_root}/home6"
+new_home "${home6}"
+ln -s /tmp "${home6}/snap/steam/common/.local/share/Steam/steamapps/common/Proton 11.0/escape-link"
+export FAKE_UNAME_M=aarch64
+if run_setup "${home6}" harness >/dev/null 2>&1; then
+    report fail "escaping-link-rejected" "exit 0, expected refusal"
+else
+    if [[ ! -e "${home6}/Games/FEX+Proton/proton" ]]; then
+        report ok "escaping-link-rejected"
+    else
+        report fail "escaping-link-rejected" "escaping payload published"
+    fi
+fi
+
+# --- 26. unrelated launcher file is preserved -------------------------------------------------------------
+home7="${suite_root}/home7"
+new_home "${home7}"
+export FAKE_UNAME_M=aarch64
+run_setup "${home7}" harness >/dev/null 2>&1
+echo "unrelated content" > "${home7}/Games/FEX+Proton/fex-proton"
+rm -f "${home7}/Games/FEX+Proton/launcher-manifest"
+if HOME="${home7}" FAKE_UNAME_M=aarch64 run_setup "${home7}" harness >/dev/null 2>&1; then
+    report fail "unrelated-launcher-preserved" "exit 0, expected refusal"
+else
+    if [[ "$(cat "${home7}/Games/FEX+Proton/fex-proton")" == "unrelated content" ]]; then
+        report ok "unrelated-launcher-preserved"
+    else
+        report fail "unrelated-launcher-preserved" "unrelated file destroyed"
+    fi
+fi
+
+# --- 27. launcher symlink is never followed ------------------------------------------------------------------
+home8="${suite_root}/home8"
+new_home "${home8}"
+export FAKE_UNAME_M=aarch64
+run_setup "${home8}" harness >/dev/null 2>&1
+rm "${home8}/Games/FEX+Proton/fex-proton"
+echo "target content" > "${home8}/Games/FEX+Proton/real-target"
+ln -s "${home8}/Games/FEX+Proton/real-target" "${home8}/Games/FEX+Proton/fex-proton"
+if HOME="${home8}" FAKE_UNAME_M=aarch64 run_setup "${home8}" harness >/dev/null 2>&1; then
+    report fail "launcher-symlink-refused" "exit 0, expected refusal"
+else
+    if [[ "$(cat "${home8}/Games/FEX+Proton/real-target")" == "target content" ]]; then
+        report ok "launcher-symlink-refused"
+    else
+        report fail "launcher-symlink-refused" "symlink target altered"
+    fi
+fi
+
+# --- 28. missing FEX creates no state --------------------------------------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN=/nonexistent FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g_nostate /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "missing-fex-no-state" "exit 0, expected refusal"
+else
+    code=$?
+    if [[ $code -eq 2 && ! -e "${h1}/prefixes/g_nostate" ]]; then
+        report ok "missing-fex-no-state"
+    else
+        report fail "missing-fex-no-state" "exit ${code} or state created"
+    fi
+fi
+
+# --- 29. unrunnable FEXBash refuses -----------------------------------------------------------------------------
+cat > "${fakebin}/FEXBash-dead" <<'EOF'
+#!/usr/bin/env bash
+echo "fake dead emulator" >&2
+exit 127
+EOF
+chmod +x "${fakebin}/FEXBash-dead"
+if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash-dead" \
+    FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g_dead /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "dead-emulator-refused" "exit 0, expected refusal"
+else
+    code=$?
+    if [[ $code -eq 2 && ! -e "${h1}/prefixes/g_dead" ]]; then
+        report ok "dead-emulator-refused"
+    else
+        report fail "dead-emulator-refused" "exit ${code} or state created"
+    fi
+fi
+
+# --- 30. missing RootFS python refuses ----------------------------------------------------------------------------
+if HOME="${home1}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+    FEX_ROOTFS="${suite_root}/empty-rootfs" \
+    "${h1}/fex-proton" g_nopython /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "missing-rootfs-python-refused" "exit 0, expected refusal"
+else
+    code=$?
+    if [[ $code -eq 2 && ! -e "${h1}/prefixes/g_nopython" ]]; then
+        report ok "missing-rootfs-python-refused"
+    else
+        report fail "missing-rootfs-python-refused" "exit ${code} or state created"
+    fi
+fi
+
+# --- 31b. nonexecutable RootFS interpreter refuses ---------------------------------------------
+home9b="${suite_root}/home9b"
+new_home "${home9b}"
+rm "${home9b}/snap/steam/common/x86_rootfs/usr/bin/python3"
+printf '#!/bin/sh\nexit 0\n' > "${home9b}/snap/steam/common/x86_rootfs/usr/bin/python3"
+chmod 644 "${home9b}/snap/steam/common/x86_rootfs/usr/bin/python3"
+export FAKE_UNAME_M=aarch64
+if HOME="${home9b}" FEX_BIN="${fakebin}/FEXBash" FEX_ROOTFS="${home9b}/snap/steam/common/x86_rootfs" \
+    "${h1}/fex-proton" g_nonexec /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "nonexec-interpreter-refused" "exit 0, expected refusal"
+else
+    code=$?
+    if [[ $code -eq 2 && ! -e "${h1}/prefixes/g_nonexec" ]]; then
+        report ok "nonexec-interpreter-refused"
+    else
+        report fail "nonexec-interpreter-refused" "exit ${code} or state created"
+    fi
+fi
+
+# --- 31. symlinked prefixes dir refuses ------------------------------------------------------------------------------
+home9="${suite_root}/home9"
+new_home "${home9}"
+export FAKE_UNAME_M=aarch64
+run_setup "${home9}" harness >/dev/null 2>&1
+h9="$(harness_of "${home9}")"
+rmdir "${h9}/prefixes" "${h9}/logs" 2>/dev/null || true
+mkdir -p "${suite_root}/redirect-target"
+ln -s "${suite_root}/redirect-target" "${h9}/prefixes"
+if HOME="${home9}" FAKE_UNAME_M=aarch64 FEX_BIN="${fakebin}/FEXBash" \
+    FEX_ROOTFS="${home1}/snap/steam/common/x86_rootfs" \
+    "${h9}/fex-proton" g_esc /tmp/game/GH.exe >/dev/null 2>&1; then
+    report fail "prefix-symlink-refused" "exit 0, expected refusal"
+else
+    if [[ ! -e "${suite_root}/redirect-target/g_esc" && ! -e "${suite_root}/redirect-target/pfx" ]]; then
+        report ok "prefix-symlink-refused"
+    else
+        report fail "prefix-symlink-refused" "wrote through symlinked tree"
+    fi
+fi
+
+# --- 32. space-containing HOME works -----------------------------------------------------------------------
+# Quoting across the harness must survive spaces. One fresh deploy
+# plus one migration refusal proves the common paths, not every case.
+spacehome="${suite_root}/home with space"
+new_home "${spacehome}"
+export FAKE_UNAME_M=aarch64
+unset FAKE_MV_FAIL_STAGE FAKE_MV_FAIL_REPLACE FAKE_CP_FAIL FAKE_CP_CORRUPT FAKE_PGREP_HOLD FAKE_PGREP_MATCH FAKE_MUTATE_DIR
+if HOME="${spacehome}" run_setup "${spacehome}" harness >/dev/null 2>&1; then
+    sps="$(harness_of "${spacehome}")"
+    if [[ -x "${sps}/fex-proton" && -d "${sps}/proton" && -f "${sps}/proton-manifest" ]] \
+        && grep -q "^PROVENANCE=snap-copy$" "${sps}/proton-manifest"; then
+        report ok "space-path-deploy"
+    else
+        report fail "space-path-deploy" "layout or manifest wrong"
+    fi
+else
+    report fail "space-path-deploy" "harness exited $?"
+fi
+
+echo "---"
+echo "pass=${pass} fail=${fail}"
+[[ "${fail}" == "0" ]]

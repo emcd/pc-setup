@@ -10,6 +10,11 @@
 # What it does: installs the Steam snap (x86 Steam + FEX emulator,
 # Canonical-maintained, DGX Spark tested) and innoextract (unpacks GOG
 # InnoSetup offline installers natively, no emulation needed for install).
+# The `harness` subcommand additionally deploys the tracked `fex-proton`
+# per-game launcher (FEX + Proton, no Steam client) under
+# ~/Games/FEX+Proton/, and `migrate-saves` carries Steam-prefix saves
+# into a harness prefix. Gaming stays opt-in: see `harness` and
+# `migrate-saves` usage below.
 # What it never does: touch nvidia-*/cuda-*/dgx-* packages, change drivers,
 # enable timers, or modify seat images. A guard snapshots the NVIDIA/DGX
 # package set before and after and fails loudly on any difference.
@@ -17,9 +22,23 @@
 # Usage:
 #   scripts/setup-steam-arm64-gaming setup
 #   scripts/setup-steam-arm64-gaming extract <installer.exe> <dest-dir>
+#   scripts/setup-steam-arm64-gaming harness
+#   scripts/setup-steam-arm64-gaming migrate-saves <compat-id> <game-id>
+#
+# `harness` lays out ~/Games/FEX+Proton/ (proton/ payload with an
+# identity manifest, prefixes/, logs/), installs the launcher template
+# as fex-proton, and links ~/.local/bin/fex-proton. Existing payload,
+# prefixes, and saves are preserved across re-runs.
+# `migrate-saves` copies the LocalLow save tree from Steam
+# compatdata/<compat-id> into the harness prefix for <game-id>, with a
+# backup that is never silently replaced. The destination prefix must
+# already exist (run the game once first); Steam and other launchers
+# must stay closed for the whole migration interval.
 #
 # The Steam-library steps (sign in, add non-Steam game, force Proton 11)
-# are UI actions; `setup` prints them as a closing checklist.
+# are UI actions; `setup` prints them as a closing checklist. The Steam
+# client path is currently broken (see the checklist); the harness is
+# the primary play path until that is fixed.
 
 set -eu -o pipefail
 
@@ -27,16 +46,29 @@ guard_package_file="$( mktemp )"
 trap 'rm -f "${guard_package_file}"' EXIT
 
 snapshot_guard_packages() {
-    dpkg-query -W -f='${Package}\n' 'nvidia-*' 'cuda-*' 'dgx-*' 2>/dev/null \
-        | sort > "${guard_package_file}"
+    guard_package_query > "${guard_package_file}" || return 1
 }
 
 verify_guard_packages() {
-    if ! dpkg-query -W -f='${Package}\n' 'nvidia-*' 'cuda-*' 'dgx-*' 2>/dev/null \
-        | sort | cmp -s - "${guard_package_file}"; then
+    local live
+    live="$(guard_package_query)" || return 1
+    if [ "$(printf '%s\n' "${live}" | sort)" != "$(sort "${guard_package_file}")" ]; then
         printf 'ERROR: NVIDIA/CUDA/DGX package set changed; aborting.\n' >&2
         return 1
     fi
+}
+
+# Sorted guard package list. An empty roster (dpkg-query exit 1, no
+# matches) is a valid empty inventory, not a failure; only real
+# query errors fail so empty is never misread as failure.
+guard_package_query() {
+    local raw rc
+    raw="$(dpkg-query -W -f='${Package}\n' 'nvidia-*' 'cuda-*' 'dgx-*' 2>/dev/null)"
+    rc=$?
+    if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 1 ]; then
+        return "${rc}"
+    fi
+    printf '%s' "${raw}" | sort
 }
 
 require_aarch64() {
@@ -72,7 +104,18 @@ cmd_setup() {
 
     cat <<'CHECKLIST'
 
-Setup complete. Remaining steps are Steam UI actions:
+Setup complete. The working play path on this host is the harness:
+  scripts/setup-steam-arm64-gaming harness
+  ~/.local/bin/fex-proton <game-id> /path/to/game.exe
+Saves from an old Steam prefix carry over with:
+  scripts/setup-steam-arm64-gaming migrate-saves <compat-id> <game-id>
+First launch is slow (Proton prefix + shader processing).
+
+The Steam-client UI route below is currently broken on this host
+(the client dies in the container bootstrap); it is retained for
+reference until that is fixed. Tracked issue drafts: pc-setup
+notebook artifacts/1 (snap rev 290) and artifacts/2
+(provider-path abort).
   1. Launch Steam (App Center) and sign in.
   2. Games -> "Add a Non-Steam Game to My Library", browse to the
      extracted game .exe (e.g. ~/Games/gloomhaven/GH.exe).
@@ -80,9 +123,10 @@ Setup complete. Remaining steps are Steam UI actions:
      the game directory (Unity finds <name>_Data relative to it).
   4. Properties -> Compatibility: tick "Force the use of a specific
      Steam Play compatibility tool", pick Proton 11 (Stable).
-  5. Play. First launch is slow (Proton prefix + shader processing).
+  5. Play.
 
-If the game fails with bwrap "setting up uid map" errors:
+If the game fails with bwrap "setting up uid map" errors (a Steam
+container failure class, not a harness prerequisite):
   echo 'kernel.apparmor_restrict_unprivileged_userns=0' \
     | sudo tee /etc/sysctl.d/99-userns-apparmor.conf
   sudo sysctl --system
@@ -110,12 +154,547 @@ cmd_extract() {
     innoextract -d "${2}" "${1}"
 }
 
+HARNESS_DIR="${HOME}/Games/FEX+Proton"
+HARNESS_LOCK="${HARNESS_DIR}/.lock"
+HARNESS_TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROTON_SNAP_SRC="${HOME}/snap/steam/common/.local/share/Steam/steamapps/common/Proton 11.0"
+STEAM_COMPAT_BASE="${HOME}/snap/steam/common/.local/share/Steam/steamapps/compatdata"
+
+# Refuse symlink escapes: every link in the staged tree must resolve
+# inside the tree. Link targets are otherwise just hashed strings,
+# which cannot prove containment.
+check_no_escape() {
+    local dir="${1:?check_no_escape needs a directory}" link target
+    while IFS= read -r link; do
+        target="$(realpath -m "${dir}/${link}")"
+        case "${target}/" in
+            "${dir}/"*) ;;
+            *)
+                printf 'ERROR: staged link escapes the tree: %s\n' "${link}" >&2
+                return 1
+                ;;
+        esac
+    done < <(cd "${dir}" && find . -mindepth 1 -type l)
+}
+
+# Verify a staged copy against its source: the staged digest must equal
+# the source digest (a copy tool can exit 0 after corrupting bytes, so
+# hashing only the copy proves nothing), and no staged link may escape.
+verify_staged_copy() {
+    local src="${1:?}" stage="${2:?}" src_digest stage_digest
+    src_digest="$(tree_digest "${src}")" || return 1
+    stage_digest="$(tree_digest "${stage}")" || return 1
+    if [ "${stage_digest}" != "${src_digest}" ]; then
+        printf 'ERROR: staged copy differs from source; refusing to publish.\n' >&2
+        return 1
+    fi
+    check_no_escape "${stage}" || return 1
+}
+# Object identity for revalidation: device plus inode detects a
+# same-path, same-content swap that digests alone cannot.
+path_identity() {
+    stat -c '%d:%i' "${1:?path_identity needs a path}"
+}
+# Digest covering file bytes, symlink targets, and tree structure.
+# Newlines in filenames are not supported; game payloads do not use them.
+tree_digest() {
+    local dir="${1:?tree_digest needs a directory}"
+    ( cd "${dir}" && find . -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+        if [ -L "${entry}" ]; then
+            printf 'link %s -> %s\n' "${entry}" "$(readlink "${entry}")"
+        elif [ -f "${entry}" ]; then
+            sha256sum "${entry}"
+        else
+            printf 'other %s\n' "${entry}"
+        fi
+    done ) | sha256sum | cut -d' ' -f1
+}
+
+valid_game_id() {
+    case "${1:-}" in
+        "" | "." | ".." | *[!A-Za-z0-9._-]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Exclusive harness gate: serialize deploy and migration against each
+# other and against running games (the launcher holds a shared lock
+# for the game lifetime). Fail-fast, never wait.
+harness_lock_exclusive() {
+    mkdir -p "${HARNESS_DIR}"
+    exec {HARNESS_LOCK_FD}>"${HARNESS_LOCK}"
+    if ! flock -n "${HARNESS_LOCK_FD}"; then
+        printf 'ERROR: harness is busy (a game is running or another operation holds it); refusing.\n' >&2
+        return 1
+    fi
+}
+
+snap_steam_revision() {
+    snap list steam 2>/dev/null | awk 'NR==2 { print $2" (rev "$3")" }'
+}
+
+write_proton_manifest() {
+    local digest="${1:?}" provenance="${2:?}"
+    local version snaprev
+    version="$(cat "${HARNESS_DIR}/proton/version" 2>/dev/null || echo unknown)"
+    snaprev="$(snap_steam_revision)"
+    {
+        printf 'TREE_DIGEST=%s\n' "${digest}"
+        printf 'PROTON_VERSION=%s\n' "${version}"
+        printf 'SNAP_REVISION=%s\n' "${snaprev:-unknown}"
+        printf 'PROVENANCE=%s\n' "${provenance}"
+    } > "${HARNESS_DIR}/proton-manifest"
+}
+
+cmd_harness() {
+    snapshot_guard_packages || return 1
+    harness_lock_exclusive || return 1
+
+    # Collision preflight BEFORE any payload or layout mutation: the
+    # launcher destination and the convenience link must be absent,
+    # managed, or byte-identical — never an unrelated file, and never
+    # a symlink (symlinks are not followed). Manifests must be absent
+    # or regular files, never symlinks or special files. Nothing is
+    # created, deleted, or hashed from an unverified path before this
+    # point: a FIFO or device at the launcher path must refuse, not
+    # block a hash read.
+    local template_digest manifest_path
+    template_digest="$(sha256sum "${HARNESS_TEMPLATE_DIR}/fex-proton" | cut -d' ' -f1)"
+    if [ -e "${HARNESS_DIR}/fex-proton" ] && [ ! -f "${HARNESS_DIR}/fex-proton" ]; then
+        printf 'ERROR: %s/fex-proton is not a regular file; refusing.\n' "${HARNESS_DIR}" >&2
+        return 1
+    fi
+    if [ -L "${HARNESS_DIR}/fex-proton" ]; then
+        printf 'ERROR: %s/fex-proton is a symlink; refusing to follow or replace it.\n' "${HARNESS_DIR}" >&2
+        return 1
+    fi
+    for manifest_path in "${HARNESS_DIR}/proton-manifest" "${HARNESS_DIR}/launcher-manifest"; do
+        if [ -L "${manifest_path}" ]; then
+            printf 'ERROR: %s is a symlink; refusing.\n' "${manifest_path}" >&2
+            return 1
+        fi
+        if [ -e "${manifest_path}" ] && [ ! -f "${manifest_path}" ]; then
+            printf 'ERROR: %s is not a regular file; refusing.\n' "${manifest_path}" >&2
+            return 1
+        fi
+    done
+
+    # Launcher collision decision happens here, before any payload
+    # work: install (absent), no-op (byte-identical), or replace
+    # (matches the recorded managed digest). Anything else refuses
+    # now, not after staging. The decision is re-verified at
+    # execution time against races.
+    launcher_action="install"
+    launcher_seen=""
+    if [ -e "${HARNESS_DIR}/fex-proton" ]; then
+        launcher_seen="$(sha256sum "${HARNESS_DIR}/fex-proton" | cut -d' ' -f1)"
+        if [ "${launcher_seen}" = "${template_digest}" ]; then
+            launcher_action="noop"
+        else
+            recorded_launcher="$(sed -n 's/^TEMPLATE_DIGEST=//p' "${HARNESS_DIR}/launcher-manifest" 2>/dev/null)"
+            if [ -n "${recorded_launcher}" ] && [ "${launcher_seen}" = "${recorded_launcher}" ]; then
+                launcher_action="replace"
+            else
+                printf 'ERROR: %s/fex-proton is unrelated to the managed launcher (digest mismatch, no record); refusing to destroy it.\n' "${HARNESS_DIR}" >&2
+                return 1
+            fi
+        fi
+    fi
+    local link="${HOME}/.local/bin/fex-proton"
+    if [ -L "${link}" ]; then
+        if [ "$(readlink -f "${link}")" != "${HARNESS_DIR}/fex-proton" ]; then
+            printf 'ERROR: %s points elsewhere; refusing to replace an unrelated symlink.\n' "${link}" >&2
+            return 1
+        fi
+    elif [ -e "${link}" ]; then
+        printf 'ERROR: %s exists and is not a symlink; refusing to destroy it.\n' "${link}" >&2
+        return 1
+    fi
+
+    # Layout writes happen only after all preflight admission above:
+    # drop interrupted staging trees (never adopted) and create the
+    # fixed prefix/log directories.
+    rm -rf "${HARNESS_DIR}"/.staging.*
+    mkdir -p "${HARNESS_DIR}/prefixes" "${HARNESS_DIR}/logs"
+
+    # Expected snapshot identity: the reviewed build this deploy is
+    # allowed to publish. Overridable for fixtures; the default is
+    # the tracked file beside the template. Version strings alone
+    # do not identify bytes.
+    local expected_manifest="${PROTON_EXPECTED_MANIFEST:-${HARNESS_TEMPLATE_DIR}/proton-expected-manifest}"
+    local expected_digest expected_version expected_snap
+    expected_digest="$(sed -n 's/^TREE_DIGEST=//p' "${expected_manifest}")"
+    expected_version="$(sed -n 's/^PROTON_VERSION=//p' "${expected_manifest}")"
+    expected_snap="$(sed -n 's/^SNAP_REVISION=//p' "${expected_manifest}")"
+    if [ -z "${expected_digest}" ] || [ -z "${expected_version}" ]; then
+        printf 'ERROR: expected Proton identity is unrecorded; refusing to publish an unreviewed snapshot.\n' >&2
+        return 1
+    fi
+
+    if [ ! -d "${HARNESS_DIR}/proton" ]; then
+        if [ "$(uname -m)" != 'aarch64' ]; then
+            printf 'ERROR: no Proton payload at %s/proton; provision a compatible Proton tree there first (snap-sourced copy is aarch64-only).\n' "${HARNESS_DIR}" >&2
+            return 1
+        fi
+        if [ ! -d "${PROTON_SNAP_SRC}" ]; then
+            printf 'ERROR: Proton 11 not found in the snap at %s; download it once via Steam, then rerun.\n' "${PROTON_SNAP_SRC}" >&2
+            return 1
+        fi
+        local stage digest snap_version
+        stage="$(mktemp -d "${HARNESS_DIR}/.staging.XXXXXX")"
+        cp -a "${PROTON_SNAP_SRC}/." "${stage}/" || { rm -rf "${stage}"; return 1; }
+        # Faithful-copy proof: the staged tree must digest-match the
+        # source, and no staged link may escape. Hashing only the
+        # copy cannot detect a corrupting-but-successful copy tool.
+        verify_staged_copy "${PROTON_SNAP_SRC}" "${stage}" || { rm -rf "${stage}"; return 1; }
+        digest="$(tree_digest "${stage}")" || { rm -rf "${stage}"; return 1; }
+        if [ ! -x "${stage}/proton" ]; then
+            rm -rf "${stage}"
+            printf 'ERROR: staged Proton payload lacks an executable proton entry point; refusing to publish.\n' >&2
+            return 1
+        fi
+        snap_version="$(cat "${PROTON_SNAP_SRC}/version" 2>/dev/null || echo unknown)"
+        if [ "${digest}" != "${expected_digest}" ] || [ "${snap_version}" != "${expected_version}" ]; then
+            rm -rf "${stage}"
+            printf 'ERROR: staged payload does not match the expected reviewed snapshot (want %s / %s); refusing to publish an unreviewed build.\n' "${expected_version}" "${expected_snap}" >&2
+            return 1
+        fi
+        mv "${stage}" "${HARNESS_DIR}/proton"
+        write_proton_manifest "${digest}" "snap-copy"
+        printf 'Proton payload staged, verified, and published.\n'
+    elif [ ! -f "${HARNESS_DIR}/proton-manifest" ]; then
+        # Pre-existing hand-built copy: adopt honestly by verifying and
+        # recording its actual bytes, including the escaping-link and
+        # entry-point checks a fresh copy must pass. The snap revision
+        # below is the revision observed AT ADOPTION TIME, not a claim
+        # about where the bytes historically came from; original
+        # provenance is explicitly unrecorded.
+        local digest
+        digest="$(tree_digest "${HARNESS_DIR}/proton")" || {
+            printf 'ERROR: cannot verify existing Proton payload; refusing adoption.\n' >&2
+            return 1
+        }
+        check_no_escape "${HARNESS_DIR}/proton" || {
+            printf 'ERROR: existing Proton payload contains escaping links; refusing adoption.\n' >&2
+            return 1
+        }
+        if [ ! -x "${HARNESS_DIR}/proton/proton" ]; then
+            printf 'ERROR: existing Proton payload lacks an executable proton entry point; refusing adoption.\n' >&2
+            return 1
+        fi
+        if [ "${digest}" != "${expected_digest}" ]; then
+            printf 'ERROR: existing Proton payload does not match the expected reviewed snapshot; refusing adoption.\n' >&2
+            return 1
+        fi
+        write_proton_manifest "${digest}" "adopted-verified pre-existing copy (snap revision at adoption only; original source unverifiable)"
+        printf 'Existing Proton payload adopted as verified (digest recorded).\n'
+    else
+        # Two distinct states. Upstream source drift (the snap moved
+        # on) is notify-only. Installed bytes that no longer match
+        # the recorded manifest are unverified and refuse: notify-only
+        # drift must never certify unknown deployed bytes.
+        local recorded live snap_version recorded_version
+        recorded="$(sed -n 's/^TREE_DIGEST=//p' "${HARNESS_DIR}/proton-manifest")"
+        recorded_version="$(sed -n 's/^PROTON_VERSION=//p' "${HARNESS_DIR}/proton-manifest")"
+        live="$(tree_digest "${HARNESS_DIR}/proton")"
+        if [ "${live}" != "${recorded}" ]; then
+            printf 'ERROR: installed Proton payload differs from the recorded manifest; bytes are unverified, refusing.\n' >&2
+            return 1
+        fi
+        snap_version="$(cat "${PROTON_SNAP_SRC}/version" 2>/dev/null || echo unknown)"
+        if [ "${snap_version}" != "unknown" ] && [ "${snap_version}" != "${recorded_version}" ]; then
+            printf 'NOTE: snap Proton source (%s) differs from the recorded payload (%s); upstream drift only, no auto-upgrade.\n' "${snap_version}" "${recorded_version}"
+        fi
+    fi
+
+    # Launcher replacement is managed and tracked: the manifest
+    # records the digest of the deployed template. An unrelated
+    # existing file is never destroyed, and symlinks are never
+    # followed (checked above). Installing over byte-identical
+    # content is a no-op. The decision was made before payload work;
+    # re-verify type and digest against races before reading or
+    # writing anything: a FIFO or device swapped in after preflight
+    # must refuse, never block a hash read.
+    local dest_digest
+    if [ -L "${HARNESS_DIR}/fex-proton" ] || ( [ -e "${HARNESS_DIR}/fex-proton" ] && [ ! -f "${HARNESS_DIR}/fex-proton" ] ); then
+        printf 'ERROR: %s/fex-proton changed type during deployment; refusing.\n' "${HARNESS_DIR}" >&2
+        return 1
+    fi
+    if [ -e "${HARNESS_DIR}/fex-proton" ]; then
+        dest_digest="$(sha256sum "${HARNESS_DIR}/fex-proton" | cut -d' ' -f1)"
+        if [ "${launcher_action}" = "noop" ] && [ "${dest_digest}" != "${template_digest}" ]; then
+            printf 'ERROR: %s/fex-proton changed during deployment; refusing.\n' "${HARNESS_DIR}" >&2
+            return 1
+        fi
+        if [ "${launcher_action}" = "replace" ] && [ "${dest_digest}" != "${launcher_seen}" ]; then
+            printf 'ERROR: %s/fex-proton changed during deployment; refusing.\n' "${HARNESS_DIR}" >&2
+            return 1
+        fi
+        if [ "${launcher_action}" = "install" ]; then
+            printf 'ERROR: %s/fex-proton appeared during deployment; refusing.\n' "${HARNESS_DIR}" >&2
+            return 1
+        fi
+    elif [ "${launcher_action}" != "install" ]; then
+        printf 'ERROR: %s/fex-proton disappeared during deployment; refusing.\n' "${HARNESS_DIR}" >&2
+        return 1
+    fi
+    if [ "${launcher_action}" != "noop" ]; then
+        cp "${HARNESS_TEMPLATE_DIR}/fex-proton" "${HARNESS_DIR}/fex-proton"
+    fi
+    chmod +x "${HARNESS_DIR}/fex-proton"
+    printf 'TEMPLATE_DIGEST=%s\n' "${template_digest}" > "${HARNESS_DIR}/launcher-manifest"
+
+    if [ ! -L "${link}" ]; then
+        mkdir -p "${HOME}/.local/bin"
+        ln -s "${HARNESS_DIR}/fex-proton" "${link}"
+    fi
+
+    verify_guard_packages
+    printf 'Harness ready: fex-proton <game-id> <exe> [args...]\n'
+}
+
+# Escape a literal string for use in a pgrep -f extended regex.
+# Paths like FEX+Proton contain ERE metacharacters; unescaped, pgrep
+# matches the wrong processes or nothing at all.
+regex_escape() {
+    printf '%s' "${1:?}" | sed 's/[][\.*^$/+?{}()|-]/\\&/g'
+}
+
+prefix_process_holds() {
+    local marker="${1:?}" pattern
+    pattern="$(regex_escape "${marker}")"
+    pgrep -f "${pattern}" >/dev/null 2>&1
+}
+
+cmd_migrate_saves() {
+    if [ "${#}" -ne 2 ]; then
+        printf 'Usage: %s migrate-saves <compat-id> <game-id>\n' "${0}" >&2
+        return 2
+    fi
+    local compat_id="${1}" game_id="${2}"
+    case "${compat_id}" in
+        "" | *[!0-9]*) printf 'ERROR: invalid compat id: %s\n' "${compat_id}" >&2; return 2 ;;
+    esac
+    valid_game_id "${game_id}" || { printf 'ERROR: invalid game id: %s\n' "${game_id}" >&2; return 2; }
+
+    local src_base="${STEAM_COMPAT_BASE}/${compat_id}"
+    local src_tree="${src_base}/pfx/drive_c/users/steamuser/AppData/LocalLow"
+    local dst_prefix="${HARNESS_DIR}/prefixes/${game_id}"
+    local dst_tree="${dst_prefix}/pfx/drive_c/users/steamuser/AppData/LocalLow"
+
+    # Canonical containment: both trees must stay inside their roots.
+    local src_real dst_parent_real
+    [ -d "${src_tree}" ] || { printf 'ERROR: no save tree for compat id %s; nothing migrated.\n' "${compat_id}" >&2; return 1; }
+    [ -d "${dst_prefix}" ] || { printf 'ERROR: no harness prefix for %s; run the game once first.\n' "${game_id}" >&2; return 1; }
+    src_real="$(realpath "${src_tree}")"
+    dst_parent_real="$(realpath "$(dirname "${dst_tree}")")"
+    case "${src_real}/" in
+        "${STEAM_COMPAT_BASE}/"*) ;;
+        *) printf 'ERROR: source escapes the compatdata tree; refusing.\n' >&2; return 1 ;;
+    esac
+    case "${dst_parent_real}/" in
+        "${HARNESS_DIR}/prefixes/"*) ;;
+        *) printf 'ERROR: destination escapes the harness prefixes tree; refusing.\n' >&2; return 1 ;;
+    esac
+
+    harness_lock_exclusive || return 1
+    rm -rf "${HARNESS_DIR}"/.staging.*
+
+    # Admission under the gate, before any recovery or backup write:
+    # re-resolve containment and require both trees idle. Recovery
+    # below moves directories, so it must not run while a game could
+    # be writing either side.
+    src_real="$(realpath "${src_tree}")"
+    dst_parent_real="$(realpath "$(dirname "${dst_tree}")")"
+    case "${src_real}/" in
+        "${STEAM_COMPAT_BASE}/"*) ;;
+        *) printf 'ERROR: source escapes the compatdata tree; refusing.\n' >&2; return 1 ;;
+    esac
+    case "${dst_parent_real}/" in
+        "${HARNESS_DIR}/prefixes/"*) ;;
+        *) printf 'ERROR: destination escapes the harness prefixes tree; refusing.\n' >&2; return 1 ;;
+    esac
+    if prefix_process_holds "${src_base}" || prefix_process_holds "${dst_prefix}"; then
+        printf 'ERROR: a game or Wine process holds the source or destination prefix; close it and rerun.\n' >&2
+        return 1
+    fi
+    printf 'NOTE: Steam and other launchers must remain closed for the whole migration interval.\n'
+
+    # Interrupted-transaction recovery (space-safe glob via array, not
+    # word splitting): a leftover replace dir means a previous publish
+    # died between renames. Restore it only when the destination is
+    # absent and exactly one replace dir exists; otherwise refuse.
+    shopt -s nullglob
+    replace_candidates=("${dst_tree}".replace.*)
+    shopt -u nullglob
+    if [ "${#replace_candidates[@]}" -gt 0 ]; then
+        if [ "${#replace_candidates[@]}" -eq 1 ] && [ ! -e "${dst_tree}" ]; then
+            if [ -L "${replace_candidates[0]}" ] || [ ! -d "${replace_candidates[0]}" ]; then
+                printf 'ERROR: leftover publish state is not a directory; refusing to adopt it.\n' >&2
+                return 1
+            fi
+            mv "${replace_candidates[0]}" "${dst_tree}" || { printf 'ERROR: cannot recover interrupted publish; refusing.\n' >&2; return 1; }
+            printf 'NOTE: recovered interrupted publish.\n'
+            # Recovery writes the destination: re-check quiescence
+            # before any baseline is taken from it.
+            if prefix_process_holds "${src_base}" || prefix_process_holds "${dst_prefix}"; then
+                printf 'ERROR: a game or Wine process holds the source or destination prefix; close it and rerun.\n' >&2
+                return 1
+            fi
+        else
+            printf 'ERROR: leftover publish state with an ambiguous destination; refusing.\n' >&2
+            return 1
+        fi
+    fi
+
+    # Baselines bound identity, not just bytes: device+inode detects a
+    # same-path, same-content swap that digests alone cannot.
+    local src_digest dst_digest="" backup="${dst_tree}.fresh" stage backup_done=0
+    local backup_digest="" src_id dst_id="" dst_parent_id backup_id=""
+    src_digest="$(tree_digest "${src_tree}")" || return 1
+    src_id="$(path_identity "${src_tree}")" || return 1
+    dst_parent_id="$(path_identity "$(dirname "${dst_tree}")")" || return 1
+    if [ -L "${dst_tree}" ]; then
+        printf 'ERROR: destination is a symlink; refusing.\n' >&2
+        return 1
+    elif [ -d "${dst_tree}" ]; then
+        dst_digest="$(tree_digest "${dst_tree}")" || return 1
+        dst_id="$(path_identity "${dst_tree}")" || return 1
+        if [ "${dst_digest}" = "${src_digest}" ]; then
+            printf 'Saves already in sync; nothing to do.\n'
+            return 0
+        fi
+        if [ -e "${backup}" ]; then
+            printf 'ERROR: destination differs and a backup already exists; refusing to replace the only backup.\n' >&2
+            return 1
+        fi
+        cp -a "${dst_tree}" "${backup}" || return 1
+        [ "$(tree_digest "${backup}")" = "${dst_digest}" ] || { rm -rf "${backup}"; printf 'ERROR: backup verification failed; nothing migrated.\n' >&2; return 1; }
+        backup_done=1
+        backup_digest="${dst_digest}"
+    elif [ -e "${dst_tree}" ]; then
+        printf 'ERROR: destination exists but is not a directory; refusing.\n' >&2
+        return 1
+    elif [ -e "${backup}" ]; then
+        printf 'ERROR: no destination but a backup exists; ambiguous interrupted state, refusing.\n' >&2
+        return 1
+    fi
+    if [ -e "${backup}" ]; then
+        backup_id="$(path_identity "${backup}")" || return 1
+    fi
+
+    stage="$(mktemp -d "${HARNESS_DIR}/.staging.XXXXXX")"
+    # Rename-only publication requires stage and destination on one
+    # filesystem; refuse cross-filesystem layouts instead of letting
+    # mv silently copy.
+    if [ "$(stat -f -c '%i' "${stage}")" != "$(stat -f -c '%i' "$(dirname "${dst_tree}")")" ]; then
+        rm -rf "${stage}"
+        printf 'ERROR: staging area is on a different filesystem than the destination; refusing.\n' >&2
+        return 1
+    fi
+    cp -a "${src_tree}/." "${stage}/" || { rm -rf "${stage}"; return 1; }
+    if [ "$(tree_digest "${stage}")" != "${src_digest}" ]; then
+        rm -rf "${stage}"
+        printf 'ERROR: staged copy differs from source snapshot; destination untouched.\n' >&2
+        return 1
+    fi
+
+    # Commit-time revalidation under the gate: rebind every identity
+    # (source path, bytes, and object; destination parent path and
+    # object; backup path, object, and bytes; destination absence,
+    # type, and object) and refuse on any drift, substitution, or
+    # type change. Digests alone do not bind path identity and do not
+    # detect same-path, same-content replacement: device+inode does.
+    commit_ok=""
+    if [ "$(realpath "${src_tree}")" != "${src_real}" ]; then
+        printf 'ERROR: source tree identity changed during migration; refusing.\n' >&2
+    elif [ "$(path_identity "${src_tree}")" != "${src_id}" ]; then
+        printf 'ERROR: source tree object changed during migration; refusing.\n' >&2
+    elif [ "$(tree_digest "${src_tree}")" != "${src_digest}" ]; then
+        printf 'ERROR: source saves changed during migration; refusing to publish a stale snapshot.\n' >&2
+    elif [ "$(realpath "$(dirname "${dst_tree}")")" != "${dst_parent_real}" ]; then
+        printf 'ERROR: destination parent identity changed during migration; refusing.\n' >&2
+    elif [ "$(path_identity "$(dirname "${dst_tree}")")" != "${dst_parent_id}" ]; then
+        printf 'ERROR: destination parent object changed during migration; refusing.\n' >&2
+    elif [ -L "${dst_tree}" ]; then
+        printf 'ERROR: destination is now a symlink; refusing.\n' >&2
+    elif [ -d "${dst_tree}" ]; then
+        if [ "$(path_identity "${dst_tree}")" != "${dst_id}" ] || [ "$(tree_digest "${dst_tree}")" != "${dst_digest}" ]; then
+            printf 'ERROR: destination changed during migration; refusing to publish over new saves.\n' >&2
+        else
+            commit_ok="replace"
+        fi
+    elif [ -e "${dst_tree}" ]; then
+        printf 'ERROR: destination changed type during migration; refusing.\n' >&2
+    elif [ -n "${dst_digest}" ]; then
+        printf 'ERROR: destination appeared during migration; refusing.\n' >&2
+    else
+        commit_ok="create"
+    fi
+    if [ -z "${commit_ok}" ]; then rm -rf "${stage}"; return 1; fi
+    if [ "${backup_done}" = "1" ]; then
+        if [ ! -e "${backup}" ] || [ "$(path_identity "${backup}")" != "${backup_id}" ] || [ "$(tree_digest "${backup}")" != "${backup_digest}" ]; then
+            rm -rf "${stage}"
+            printf 'ERROR: backup changed during migration; refusing.\n' >&2
+            return 1
+        fi
+    elif [ -e "${backup}" ]; then
+        rm -rf "${stage}"
+        printf 'ERROR: unexpected backup appeared during migration; refusing.\n' >&2
+        return 1
+    fi
+    if prefix_process_holds "${src_base}" || prefix_process_holds "${dst_prefix}"; then
+        rm -rf "${stage}"
+        printf 'ERROR: a game started during migration; refusing to publish.\n' >&2
+        return 1
+    fi
+
+    # Atomic publish: rotate the previous destination aside instead
+    # of deleting it, so a failed publish or verification restores
+    # exact bytes. The .fresh backup is an archive and is never
+    # consumed by recovery.
+    replace=""
+    if [ "${commit_ok}" = "replace" ]; then
+        replace="${dst_tree}.replace.$$"
+        mv "${dst_tree}" "${replace}" || { rm -rf "${stage}"; printf 'ERROR: cannot stage destination aside; nothing published.\n' >&2; return 1; }
+    fi
+    if ! mv "${stage}" "${dst_tree}"; then
+        if [ -n "${replace}" ]; then
+            if ! mv "${replace}" "${dst_tree}"; then
+                printf 'ERROR: publish failed AND restore failed; previous destination preserved at %s.\n' "${replace}" >&2
+                return 1
+            fi
+        fi
+        printf 'ERROR: publish failed; previous destination restored.\n' >&2
+        return 1
+    fi
+    if [ "$(tree_digest "${dst_tree}")" != "${src_digest}" ]; then
+        rm -rf "${dst_tree}"
+        if [ -n "${replace}" ]; then
+            mv "${replace}" "${dst_tree}" || { printf 'ERROR: commit verification failed AND restore failed; previous destination preserved at %s.\n' "${replace}" >&2; return 1; }
+        fi
+        printf 'ERROR: commit verification failed; previous state restored.\n' >&2
+        return 1
+    fi
+    if [ -n "${replace}" ]; then
+        rm -rf "${replace}"
+    fi
+    rm -rf "${HARNESS_DIR}"/.staging.*
+    if [ "${backup_done}" = "1" ]; then
+        printf 'Saves migrated; previous saves kept at %s.\n' "${backup}"
+    else
+        printf 'Saves migrated; no previous saves existed to back up.\n'
+    fi
+}
+
 main() {
     local subcommand="${1:-setup}"
     case "${subcommand}" in
         setup)   cmd_setup ;;
         extract) shift; cmd_extract "${@}" ;;
-        *) printf 'Usage: %s {setup|extract}\n' "${0}" >&2; return 2 ;;
+        harness) cmd_harness ;;
+        migrate-saves) shift; cmd_migrate_saves "${@}" ;;
+        *) printf 'Usage: %s {setup|extract|harness|migrate-saves}\n' "${0}" >&2; return 2 ;;
     esac
 }
 

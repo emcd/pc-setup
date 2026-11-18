@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# fex-proton: run Windows x86-64 games via Proton, no Steam client.
+#
+# Usage: fex-proton <game-id> <exe> [args...]
+#
+# Layout (all under the install dir):
+#   proton/               pinned Proton distribution (self-contained copy)
+#   prefixes/<game-id>/   one Wine prefix per game (STEAM_COMPAT_DATA_PATH)
+#   logs/                 Proton/game log output directory
+#
+# Environment honored (all optional):
+#   FEX_PROTON_LOG=1        enable Proton logging to logs/ (steam-*.log)
+#   FEX_BIN             override the emulator entry point (aarch64 only)
+#   FEX_ROOTFS          override the shared x86 RootFS (aarch64 only)
+#   FEX_APP_CONFIG          override the FEX app config dir (aarch64 only)
+#   FEX_SERVERSOCKET  override the FEXServer socket path (aarch64 only)
+#
+# On aarch64 the FEX emulator and its x86 RootFS are referenced from the
+# Steam snap (large, snap-managed, verified working); everything else
+# here is self-contained and immune to snap churn. On x86_64 Proton runs
+# directly with no emulation.
+#
+# Ordering contract: argument, architecture, runtime, and containment
+# checks all run BEFORE any prefix, log, or lock state is created.
+# Missing runtimes and unsupported layouts exit 2.
+
+set -eu -o pipefail
+
+SRC="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1 && [ -L "${SRC}" ]; then
+    SRC="$(readlink -f "${SRC}")"
+fi
+HERE="$(cd "$(dirname "${SRC}")" && pwd)"
+GAME="${1:?usage: fex-proton <game-id> <exe> [args...]}"
+EXE="${2:?usage: fex-proton <game-id> <exe> [args...]}"
+shift 2 || true
+
+# Game ids are single path segments; anything else could escape the
+# prefix and log trees.
+case "${GAME}" in
+    *[!A-Za-z0-9._-]* | "" | "." | "..")
+        echo "fex-proton: invalid game id: ${GAME}" >&2
+        exit 2
+        ;;
+esac
+
+# Resolve a relative exe before changing directory below, so the game
+# path never depends on the harness working directory.
+case "${EXE}" in
+    /*) ;;
+    *) EXE="${PWD}/${EXE}" ;;
+esac
+
+ARCH="$(uname -m)"
+
+COMPAT="${HERE}/prefixes/${GAME}"
+LOGDIR="${HERE}/logs"
+
+# Exported before the architecture checks so the runnable probe
+# exercises the effective runtime, not defaults. Setting variables
+# creates no state; the gate they enable still precedes all mutation.
+# FEX_* defaults are harmless on x86_64 (unused there).
+export FEX_BIN="${FEX_BIN:-/snap/steam/current/usr/bin/FEXBash}"
+export FEX_ROOTFS="${FEX_ROOTFS:-${HOME}/snap/steam/common/x86_rootfs}"
+export FEX_APP_CONFIG_LOCATION="${FEX_APP_CONFIG:-${HOME}/snap/steam/common/fex_config}"
+export FEX_SERVERSOCKETPATH="${FEX_SERVERSOCKET:-${HOME}/snap/steam/common/.fex-emu/FEXServer.Socket}"
+export STEAM_COMPAT_DATA_PATH="${COMPAT}"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="${HOME}/snap/steam/common/.local/share/Steam"
+case "${ARCH}" in
+    x86_64)
+        PROTON="${HERE}/proton/proton"
+        if [[ ! -x "${PROTON}" ]]; then
+            echo "fex-proton: Proton payload missing or not executable: ${PROTON}" >&2
+            exit 2
+        fi
+        RUN_MODE="direct"
+        ;;
+    aarch64)
+        # FEXBash (not FEX): the whole Proton child tree must run
+        # emulated; plain FEX only emulates a single binary, leaving
+        # Proton's wine children as native exec attempts.
+        # FEXBash drops trailing args in direct form, hence the
+        # -c 'exec "$@"' placeholder, which preserves argv exactly.
+        # (FEX_* paths resolved with defaults above, before the probe.)
+        PROTON="${HERE}/proton/proton"
+        if [[ ! -x "${FEX_BIN}" ]]; then
+            echo "fex-proton: emulator missing or not executable: ${FEX_BIN}" >&2
+            exit 2
+        fi
+        if [[ ! -d "${FEX_ROOTFS}" ]]; then
+            echo "fex-proton: x86 RootFS missing: ${FEX_ROOTFS}" >&2
+            exit 2
+        fi
+        if [[ ! -f "${FEX_ROOTFS}/usr/bin/python3" ]]; then
+            echo "fex-proton: RootFS x86-64 interpreter missing: ${FEX_ROOTFS}/usr/bin/python3" >&2
+            exit 2
+        fi
+        if [[ ! -x "${PROTON}" ]]; then
+            echo "fex-proton: Proton payload missing or not executable: ${PROTON}" >&2
+            exit 2
+        fi
+        # Runnable probe through the emulator: existence is not
+        # execution. The RootFS Python must answer under FEXBash
+        # before any prefix, log, or lock state is created.
+        if ! "${FEX_BIN}" -c 'exec "$@"' _ /usr/bin/python3 --version >/dev/null 2>&1; then
+            echo "fex-proton: RootFS x86-64 interpreter failed to run under the emulator" >&2
+            exit 2
+        fi
+        RUN_MODE="emulated"
+        ;;
+    *)
+        echo "fex-proton: unsupported architecture: ${ARCH}" >&2
+        exit 2
+        ;;
+esac
+
+# Refuse symlinked ancestors before creating anything: a symlinked
+# prefixes/ or logs/ directory would redirect the whole tree outside
+# the harness. Game ids cannot contain slashes (checked above), so
+# only these two fixed chains are walked.
+for tree in "${COMPAT}" "${LOGDIR}"; do
+    ancestor="$(dirname "${tree}")"
+    while [[ "${ancestor}" != "${HERE}" && "${ancestor}" != "/" && "${ancestor}" != "." ]]; do
+        if [[ -L "${ancestor}" ]]; then
+            echo "fex-proton: ancestor is a symlink, refusing: ${ancestor}" >&2
+            exit 2
+        fi
+        ancestor="$(dirname "${ancestor}")"
+    done
+done
+
+# Containment before creation: resolve without requiring existence,
+# so no mkdir ever precedes verification. (Re-verified after
+# creation below against TOCTOU swaps.)
+for tree in "${COMPAT}" "${LOGDIR}"; do
+    resolved="$(realpath -m "${tree}")"
+    case "${resolved}/" in
+        "${HERE}/"*) ;;
+        *)
+            echo "fex-proton: path escapes the harness install dir, refusing: ${tree}" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Serialize with harness mutations (deploy, save migration): the
+# launcher holds a shared lock for the game lifetime, so a migration
+# or deployment refuses rather than running concurrently on the
+# same prefix. The descriptor survives exec, keeping the lock for
+# the whole game session. The lock is taken before any per-game
+# state so a busy harness refuses without creating prefix or log
+# dirs (.lock itself is fixed harness infrastructure).
+exec {HARNESS_LOCK}>"${HERE}/.lock"
+if ! flock -n -s "${HARNESS_LOCK}"; then
+    echo "fex-proton: harness is busy (migration or deployment in progress); refusing concurrent use of ${GAME}" >&2
+    exit 1
+fi
+
+mkdir -p "${COMPAT}" "${LOGDIR}"
+
+# Belt and braces: the admitted layout must resolve inside the install
+# directory. Remove the just-created (empty) dirs before refusing.
+for tree in "${COMPAT}" "${LOGDIR}"; do
+    resolved="$(realpath -m "${tree}")"
+    case "${resolved}/" in
+        "${HERE}/"*) ;;
+        *)
+            rmdir "${COMPAT}" "${LOGDIR}" 2>/dev/null || true
+            echo "fex-proton: path escapes the harness install dir, refusing: ${tree}" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Stable working directory: game and Proton logs land under the
+# harness instead of the caller's cwd. (Compat env already exported
+# above, before the probe.)
+cd "${LOGDIR}"
+
+if [[ "${FEX_PROTON_LOG:-0}" == "1" ]]; then
+    export PROTON_LOG=1
+    echo "fex-proton: logging to ${LOGDIR}/ (steam-*.log)" >&2
+fi
+
+if [[ "${RUN_MODE}" == "direct" ]]; then
+    exec "${PROTON}" run "${EXE}" "$@"
+fi
+
+# Proton itself must run under the emulated x86-64 interpreter, or its
+# Wine children escape emulation (native python -> native exec ->
+# Exec format error). /usr/bin/python3 resolves to the RootFS x86-64
+# Python inside FEXBash (verified: platform.machine() == x86_64).
+# (FEX_* exports already happened above, before the probe.)
+exec "${FEX_BIN}" -c 'exec "$@"' _ /usr/bin/python3 "${PROTON}" run "${EXE}" "$@"

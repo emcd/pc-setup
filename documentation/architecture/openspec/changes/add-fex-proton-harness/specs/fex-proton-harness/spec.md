@@ -45,8 +45,42 @@ refuse adoption, drift, or collision cases it cannot verify.
 
 - **WHEN** the deploy finds the existing hand-built Proton copy
 - **THEN** its digest is verified and recorded as adopted-verified
-  with actual provenance, or adoption refuses for operator
+  with the snap revision observed at adoption (never a backfilled
+  historical claim), or adoption refuses for operator
   resolution; assumed provenance is never backfilled.
+
+#### Scenario: Corrupting copy is rejected
+
+- **WHEN** a copy tool exits success but the staged tree digest
+  differs from the source digest
+- **THEN** deploy refuses and publishes nothing; hashing only the
+  staged tree is not accepted as verification.
+
+#### Scenario: Escaping payload link is rejected
+
+- **WHEN** the staged payload contains a symlink resolving outside
+  the staged tree
+- **THEN** deploy refuses and publishes nothing, even when digests
+  are self-consistent.
+
+#### Scenario: Upstream drift and unverified bytes are distinguished
+
+- **WHEN** the recorded manifest exists and the snap source version
+  differs from it
+- **THEN** deploy reports identified upstream drift without
+  auto-upgrading; when instead the installed bytes differ from the
+  manifest digest, deploy refuses without refreshing the launcher
+  or reporting ready. The two states are never conflated, and
+  notify-only drift never certifies unknown bytes.
+
+#### Scenario: Managed launcher replacement is tracked
+
+- **WHEN** the launcher destination holds the previously deployed
+  bytes (digest matches the launcher manifest) or content
+  identical to the new template
+- **THEN** deploy replaces or no-ops respectively; when it holds an
+  unrelated file, or any symlink, deploy refuses without following
+  the link or destroying anything.
 
 #### Scenario: Unrelated collision refuses
 
@@ -85,10 +119,25 @@ for missing runtime or path dependencies.
 
 #### Scenario: Missing runtime exits 2 on ARM64
 
-- **WHEN** on `aarch64` the FEX pieces, the RootFS, or the Proton
-  payload are absent
-- **THEN** the launcher exits 2 before creating any prefix or log
-  state.
+- **WHEN** on `aarch64` the FEX entry point is missing, unexecutable,
+  or unrunnable, the RootFS or its x86-64 interpreter is absent, or
+  the Proton payload is missing or not executable
+- **THEN** the launcher exits 2 before creating any prefix, log, or
+  lock state.
+
+#### Scenario: Symlinked ancestor refuses without state
+
+- **WHEN** a prefixes or logs ancestor is a symlink pointing outside
+  the install directory
+- **THEN** the launcher refuses without creating state or writing
+  through the link.
+
+#### Scenario: Unrunnable interpreter refuses without state
+
+- **WHEN** the configured RootFS interpreter exists but cannot run
+  through the emulator
+- **THEN** the launcher refuses with exit 2 before any prefix, log,
+  or lock state is created.
 
 #### Scenario: Native success with FEX absent on AMD64
 
@@ -154,6 +203,12 @@ layouts are out of scope.
   interrupted
 - **THEN** the previous destination saves and backup remain intact.
 
+#### Scenario: Process matching is literal
+
+- **WHEN** prefix paths contain regex metacharacters
+- **THEN** the held-prefix check matches them literally: a holding
+  process is found, and a non-matching name is not mistaken for one.
+
 #### Scenario: Running game refuses
 
 - **WHEN** a game or Wine process holds the source or the
@@ -173,10 +228,52 @@ layouts are out of scope.
   a migration in progress
 - **THEN** it refuses rather than running concurrently.
 
-#### Scenario: Drift before commit refuses
+#### Scenario: Ancestor or final-link substitution refuses
 
-- **WHEN** source, destination, or backup state changes between
-  initial validation and commit
+- **WHEN** a source or destination ancestor or the final save-tree
+  entry is substituted (including by a symlink to an identical
+  tree outside the admitted roots) between validation and commit
+- **THEN** migration refuses without publishing and without writing
+  outside the admitted trees, even when all bytes are identical.
+
+#### Scenario: Source drift refuses a stale snapshot
+
+- **WHEN** the source save tree changes between initial validation
+  and commit
+- **THEN** migration refuses rather than publishing a stale
+  snapshot; digest equality alone never substitutes for identity.
+
+#### Scenario: Publish failure restores exact state
+
+- **WHEN** the atomic publish or its verification fails
+- **THEN** the previous destination is restored byte-identical from
+  the rotate-aside copy and the `.fresh` backup is untouched.
+
+#### Scenario: Replace symlink is never adopted
+
+- **WHEN** a leftover replace path is a symlink rather than a
+  directory
+- **THEN** recovery refuses without adopting it, even when the
+  destination is absent.
+
+#### Scenario: Held prefix blocks recovery
+
+- **WHEN** a game or Wine process holds the source or destination
+  while a leftover replace dir waits
+- **THEN** migration refuses before any recovery write, leaving
+  the replace dir stranded for a later clean run.
+
+#### Scenario: Process matching is literal
+
+- **WHEN** prefix paths contain regex metacharacters
+- **THEN** the game-held check matches those literal paths: a
+  holding process is found, and a non-matching process is not
+  mistaken for one.
+
+#### Scenario: Destination or backup drift refuses
+
+- **WHEN** the destination or backup state changes between initial
+  validation and commit (appearance, type change, or digest drift)
 - **THEN** migration refuses without publishing over newly written
   saves or replacing the retained backup.
 
