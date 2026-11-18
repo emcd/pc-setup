@@ -69,7 +69,13 @@ sudo apt-get install --yes \
 # TODO: Use signed version of Uv installer, if available.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-uv tool install 'maestral[gui]'
+uv tool install 'maestral[gui]' --with 'dropbox<12' --with 'setuptools<81'
+# Pinned: Maestral 1.9.6 subclasses the SDK as _DropboxSDK and overrides
+# request_json_string without the extra_headers parameter that dropbox
+# 12.x passes internally, so every API call fails. dropbox 11.x keeps
+# the old call chain; setuptools<81 still ships the pkg_resources that
+# dropbox 11.x imports. Pins are recorded in the tool receipt and hold
+# across `uv tool upgrade` runs.
 # TODO: Maestral sync instructions.
 
 cat >>"${HOME}/.bashrc" <<'EOF'
@@ -170,6 +176,7 @@ sudo tee /etc/sysctl.d/99-inotify.conf >/dev/null <<'EOF'
 # Managed by pc-setup bootstrap.
 fs.inotify.max_user_instances = 1024
 fs.inotify.max_user_watches = 524288
+fs.inotify.max_queued_events = 131072
 EOF
 sudo sysctl -p /etc/sysctl.d/99-inotify.conf
 
