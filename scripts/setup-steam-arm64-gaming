@@ -8,8 +8,11 @@
 # gaming is opt-in, host-side, and irrelevant to seat images.
 #
 # What it does: installs the Steam snap (x86 Steam + FEX emulator,
-# Canonical-maintained, DGX Spark tested) and innoextract (unpacks GOG
-# InnoSetup offline installers natively, no emulation needed for install).
+# Canonical-maintained, DGX Spark tested), innoextract (unpacks GOG
+# InnoSetup offline installers natively, no emulation needed for install),
+# the Heroic Games Launcher arm64 .deb (GOG/Galaxy sign-in for multiplayer
+# via its Comet service), and Mumble (voice chat, decouples voice from
+# in-game netcode).
 # The `harness` subcommand additionally deploys the tracked `fex-proton`
 # per-game launcher (FEX + Proton, no Steam client) under
 # ~/Games/FEX+Proton/, and `migrate-saves` carries Steam-prefix saves
@@ -78,6 +81,40 @@ require_aarch64() {
     fi
 }
 
+# Heroic arm64 release pin. Verified 2026-11-19: the .deb installs and
+# GOG login succeeds; the bundled runners are x86_64-only, so games run
+# through the harness shim registered as a custom Proton build.
+HEROIC_VERSION='2.22.4'
+HEROIC_SHA256_ARM64='b6f7348a9ccc656a88009ae018fff1628afc64dd3b6326e6b6db1d32cdd2ea93'
+HEROIC_DEB="Heroic-${HEROIC_VERSION}-linux-arm64.deb"
+HEROIC_URL="https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v${HEROIC_VERSION}/${HEROIC_DEB}"
+
+install_heroic() {
+    if command -v heroic >/dev/null 2>&1; then
+        printf 'Heroic already installed; leaving it alone.\n'
+        return 0
+    fi
+    local workdir
+    workdir="$(mktemp --directory)" || return 1
+    curl --location --fail --output "${workdir}/${HEROIC_DEB}" "${HEROIC_URL}" \
+        || { rm -rf "${workdir}"; return 1; }
+    ( cd "${workdir}" && echo "${HEROIC_SHA256_ARM64}  ${HEROIC_DEB}" | sha256sum --check - ) \
+        || { rm -rf "${workdir}"; return 1; }
+    sudo apt-get install --yes "${workdir}/${HEROIC_DEB}" || { rm -rf "${workdir}"; return 1; }
+    rm -rf "${workdir}"
+}
+
+install_mumble() {
+    if command -v mumble >/dev/null 2>&1; then
+        printf 'Mumble already installed; leaving it alone.\n'
+        return 0
+    fi
+    sudo apt-get update
+    # Plain install with recommends: the working 2026-11-19 install used
+    # default recommends (Qt/audio stack), so keep them.
+    sudo apt-get install --yes mumble
+}
+
 cmd_setup() {
     require_aarch64
     snapshot_guard_packages
@@ -95,6 +132,9 @@ cmd_setup() {
         printf 'innoextract already installed; leaving it alone.\n'
     fi
 
+    install_heroic
+    install_mumble
+
     verify_guard_packages
 
     if [ ! -e /dev/ntsync ]; then
@@ -110,6 +150,17 @@ Setup complete. The working play path on this host is the harness:
 Saves from an old Steam prefix carry over with:
   scripts/setup-steam-arm64-gaming migrate-saves <compat-id> <game-id>
 First launch is slow (Proton prefix + shader processing).
+
+Heroic (GOG/Galaxy multiplayer) and Mumble (voice) were also installed:
+  - Launch Heroic, sign in to GOG, and Import the game folder
+    (e.g. ~/Games/gloomhaven) instead of redownloading it.
+  - In the game's settings, pick the custom Proton entry pointing at
+    ~/Games/FEX+Proton/heroic-proton (the harness shim); the bundled
+    runners are x86_64-only and cannot run on ARM64. Set disableUMU
+    if Heroic routes the shim through umu-launcher (PROTONPATH error).
+  - Use Mumble for voice so a voice wobble stops looking like a game
+    drop. If Mumble seems to crash on first run, wait out its slow
+    initialization before interacting with it.
 
 The Steam-client UI route below is currently broken on this host
 (the client dies in the container bootstrap); it is retained for
